@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native'
 import { useTheme } from '../../lib/useTheme'
+import { router } from 'expo-router'
 
 export default function Login() {
   const c = useTheme()
@@ -70,7 +71,7 @@ export default function Login() {
       </View>
 
       {/* Olvidaste contraseña */}
-      <TouchableOpacity style={styles.forgotContainer}>
+      <TouchableOpacity style={styles.forgotContainer} onPress={() => router.push('/(auth)/recuperar-password')}>
         <Text style={[styles.forgotText, { color: c.boton }]}>{t('login.forgotPassword')}</Text>
       </TouchableOpacity>
 
@@ -82,7 +83,7 @@ export default function Login() {
       </TouchableOpacity>
 
       {/* Link registro */}
-      <TouchableOpacity style={styles.linkContainer}>
+      <TouchableOpacity style={styles.linkContainer} onPress={() => router.push('/(auth)/registro')}>
         <Text style={{ color: c.subtexto }}>{t('login.noAccount')} </Text>
         <Text style={[styles.link, { color: c.boton }]}>{t('login.registerLink')}</Text>
       </TouchableOpacity>

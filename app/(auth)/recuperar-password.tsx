@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native'
 import { useTheme } from '../../lib/useTheme'
+import { router } from 'expo-router'
 
 export default function RecuperarPassword() {
   const c = useTheme()
@@ -69,11 +70,10 @@ export default function RecuperarPassword() {
       )}
 
       {/* Volver al login */}
-      <TouchableOpacity style={styles.backContainer}>
-        <Text style={[styles.backArrow, { color: c.boton }]}>←</Text>
-        <Text style={[styles.backText, { color: c.boton }]}>{t('forgotPassword.backToLogin')}</Text>
-      </TouchableOpacity>
-
+          <TouchableOpacity style={styles.backContainer} onPress={() => router.back()}>
+            <Text style={[styles.backArrow, { color: c.boton }]}>←</Text>
+            <Text style={[styles.backText, { color: c.boton }]}>{t('forgotPassword.backToLogin')}</Text>
+          </TouchableOpacity>
     </View>
   )
 }

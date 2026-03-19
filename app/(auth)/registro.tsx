@@ -13,6 +13,7 @@ import {
 } from 'react-native'
 import { isEmpty, isValidDocument, isValidEmail, isValidPassword } from '../../lib/helper'
 import { useTheme } from '../../lib/useTheme'
+import { router } from 'expo-router'
 
 type DocType = 'DNI' | 'NIE' | 'PASSPORT'
 
@@ -293,7 +294,7 @@ export default function Register() {
       </TouchableOpacity>
 
       {/* Link a login */}
-      <TouchableOpacity style={styles.linkContainer}>
+      <TouchableOpacity style={styles.linkContainer} onPress={() => router.push('/(auth)/login')}>
         <Text style={{ color: c.subtexto }}>{t('register.alreadyAccount')} </Text>
         <Text style={[styles.link, { color: c.boton }]}>{t('register.loginLink')}</Text>
       </TouchableOpacity>
