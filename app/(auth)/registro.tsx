@@ -10,6 +10,8 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  ActivityIndicator,
+  Platform, // <-- Importante para diferenciar Web de Móvil
 } from 'react-native'
 import { isEmpty, isValidDocument, isValidEmail, isValidPassword } from '../../lib/helper'
 import { useTheme } from '../../lib/useTheme'
@@ -42,6 +44,8 @@ export default function Register() {
   const [docType, setDocType] = useState<DocType>('DNI')
   const [docNumber, setDocNumber] = useState('')
   const [profilePhoto, setProfilePhoto] = useState<string | null>(null)
+  
+  const [isLoading, setIsLoading] = useState(false)
 
   const pickPhoto = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync()
@@ -60,66 +64,104 @@ export default function Register() {
     }
   }
 
+  // VALIDACIÓN 1: Errores en el formulario local
   const validateFields = (): boolean => {
     if (isEmpty(firstName)) {
-      Alert.alert(t('common.error'), t('register.errorFirstName'))
+      Alert.alert(t('common.error', 'Error'), t('register.errorFirstName', 'El nombre es obligatorio.'))
       return false
     }
     if (isEmpty(lastName)) {
-      Alert.alert(t('common.error'), t('register.errorLastName'))
+      Alert.alert(t('common.error', 'Error'), t('register.errorLastName', 'Los apellidos son obligatorios.'))
       return false
     }
     if (!isValidEmail(email)) {
-      Alert.alert(t('common.error'), t('register.errorEmail'))
+      Alert.alert(t('common.error', 'Error'), t('register.errorEmail', 'Por favor, introduce un email válido.'))
       return false
     }
     if (isEmpty(phone)) {
-      Alert.alert(t('common.error'), t('register.errorPhone'))
+      Alert.alert(t('common.error', 'Error'), t('register.errorPhone', 'El teléfono es obligatorio.'))
       return false
     }
     if (!isValidDocument(docType, docNumber)) {
-      Alert.alert(t('common.error'), t('register.errorDocument', { type: docType }))
+      Alert.alert(t('common.error', 'Error'), t('register.errorDocument', { type: docType, defaultValue: 'Documento no válido.' }))
       return false
     }
     if (!isValidPassword(password)) {
-      Alert.alert(t('common.error'), t('register.errorPassword'))
+      Alert.alert(t('common.error', 'Error'), t('register.errorPassword', 'La contraseña debe tener al menos 6 caracteres.'))
       return false
     }
     if (password !== confirmPassword) {
-      Alert.alert(t('common.error'), t('register.errorConfirmPassword'))
+      Alert.alert(t('common.error', 'Error'), t('register.errorConfirmPassword', 'Las contraseñas no coinciden.'))
       return false
     }
     return true
   }
 
-  /*const handleRegister = async () => {
+const handleRegister = async () => {
+    // Si hay un error en el formulario, se para aquí y no llama a la API
     if (!validateFields()) return
 
-    const { data, error: authError } = await supabase.auth.signUp({ email, password })
+    setIsLoading(true)
 
-    if (authError || !data.user) {
-      Alert.alert(t('common.error'), authError?.message)
-      return
+    try {
+      const payload = {
+        email: email.trim(),
+        password: password,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        phone: phone.trim(),
+        docType: docType,
+        docNumber: docNumber.trim().toUpperCase(),
+        photoUrl: profilePhoto || "" 
+      }
+
+      const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://squadraapi.onrender.com'
+
+      const response = await fetch(`${API_URL}/auth/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify(payload),
+      })
+
+      // VALIDACIÓN 2: Errores devueltos por el servidor (Duplicados, caídas...)
+      if (!response.ok) {
+        const errorText = await response.text()
+        
+        if (errorText.includes('uq_profiles_documents') || errorText.includes('duplicate key')) {
+          Alert.alert("Error de registro", "Este documento de identidad ya está registrado en nuestro sistema.")
+        } else if (errorText.includes('already exists') || errorText.includes('Email')) {
+           Alert.alert("Error de registro", "Este correo electrónico ya está en uso.")
+        } else {
+          Alert.alert("Error del servidor", "No se pudo completar el registro. Verifica los datos e inténtalo de nuevo.")
+        }
+        
+        // El return hace que se pare el código aquí (no navega a otra pantalla si hay error)
+        return
+      }
+
+      // PASO 3: ¡ÉXITO! Todo está correcto
+      const data = await response.json()
+      console.log("¡Registro exitoso! Token:", data.token)
+      
+      clearFields() // Limpiamos el formulario en segundo plano
+      
+      // ¡Navegación instantánea a la siguiente pantalla sin preguntar!
+      router.replace('/unirse')
+
+    } catch (error) {
+      // VALIDACIÓN 4: Error de red (sin internet o servidor apagado)
+      console.error("Error conectando con la API:", error)
+      Alert.alert(
+        "Error de conexión", 
+        "No hemos podido conectar con el servidor. Revisa tu conexión a internet e inténtalo de nuevo."
+      )
+    } finally {
+      setIsLoading(false)
     }
-
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .insert({
-        id: data.user.id,
-        first_name: firstName,
-        last_name: lastName,
-        phone,
-        doc_type: docType,
-        doc_number: docNumber,
-      }) //cambiar por la api 
-
-    if (profileError) {
-      Alert.alert(t('common.error'), profileError.message)
-      return
-    }
-
-    Alert.alert(t('register.successTitle'), t('register.successMessage'))
-  }*/ //cambiar por la api con json 
+  }
 
   const clearFields = () => {
     setFirstName('')
@@ -140,15 +182,12 @@ export default function Register() {
       contentContainerStyle={[styles.container, { backgroundColor: c.fondo }]}
       keyboardShouldPersistTaps="handled"
     >
-      {/* Brand */}
       <Text style={styles.brand}>SQUADRA</Text>
 
-      {/* Header */}
       <Text style={[styles.title, { color: c.texto }]}>{t('register.title')}</Text>
       <Text style={[styles.subtitle, { color: c.subtexto }]}>{t('register.subtitle')}</Text>
 
-      {/* Foto de perfil */}
-      <TouchableOpacity style={styles.photoContainer} onPress={pickPhoto}>
+      <TouchableOpacity style={styles.photoContainer} onPress={pickPhoto} disabled={isLoading}>
         {profilePhoto ? (
           <Image source={{ uri: profilePhoto }} style={[styles.photo, { borderColor: c.boton }]} />
         ) : (
@@ -162,7 +201,6 @@ export default function Register() {
         </View>
       </TouchableOpacity>
 
-      {/* Nombre */}
       <Text style={[styles.label, { color: c.subtexto }]}>{t('register.firstName')} *</Text>
       <TextInput
         style={[styles.input, { backgroundColor: c.input, borderColor: c.bordeInput, color: c.texto }]}
@@ -171,9 +209,9 @@ export default function Register() {
         value={firstName}
         onChangeText={setFirstName}
         autoCapitalize="words"
+        editable={!isLoading}
       />
 
-      {/* Apellidos */}
       <Text style={[styles.label, { color: c.subtexto }]}>{t('register.lastName')} *</Text>
       <TextInput
         style={[styles.input, { backgroundColor: c.input, borderColor: c.bordeInput, color: c.texto }]}
@@ -182,9 +220,9 @@ export default function Register() {
         value={lastName}
         onChangeText={setLastName}
         autoCapitalize="words"
+        editable={!isLoading}
       />
 
-      {/* Email */}
       <Text style={[styles.label, { color: c.subtexto }]}>{t('register.email')} *</Text>
       <TextInput
         style={[styles.input, { backgroundColor: c.input, borderColor: c.bordeInput, color: c.texto }]}
@@ -195,9 +233,9 @@ export default function Register() {
         keyboardType="email-address"
         autoCapitalize="none"
         autoCorrect={false}
+        editable={!isLoading}
       />
 
-      {/* Teléfono */}
       <Text style={[styles.label, { color: c.subtexto }]}>{t('register.phone')} *</Text>
       <TextInput
         style={[styles.input, { backgroundColor: c.input, borderColor: c.bordeInput, color: c.texto }]}
@@ -206,9 +244,9 @@ export default function Register() {
         value={phone}
         onChangeText={setPhone}
         keyboardType="phone-pad"
+        editable={!isLoading}
       />
 
-      {/* Tipo de documento */}
       <Text style={[styles.label, { color: c.subtexto }]}>{t('register.docType')} *</Text>
       <View style={styles.radioGroup}>
         {DOC_TYPES.map((type) => {
@@ -216,6 +254,7 @@ export default function Register() {
           return (
             <TouchableOpacity
               key={type.value}
+              disabled={isLoading}
               style={[
                 styles.radioButton,
                 {
@@ -239,7 +278,6 @@ export default function Register() {
         })}
       </View>
 
-      {/* Número de documento */}
       <Text style={[styles.label, { color: c.subtexto }]}>
         {t('register.docNumber', { type: docType })} *
       </Text>
@@ -251,9 +289,9 @@ export default function Register() {
         onChangeText={setDocNumber}
         autoCapitalize="characters"
         autoCorrect={false}
+        editable={!isLoading}
       />
 
-      {/* Contraseña */}
       <Text style={[styles.label, { color: c.subtexto }]}>{t('register.password')} *</Text>
       <TextInput
         style={[styles.input, { backgroundColor: c.input, borderColor: c.bordeInput, color: c.texto }]}
@@ -262,9 +300,9 @@ export default function Register() {
         value={password}
         onChangeText={setPassword}
         secureTextEntry
+        editable={!isLoading}
       />
 
-      {/* Confirmar contraseña */}
       <Text style={[styles.label, { color: c.subtexto }]}>{t('register.confirmPassword')} *</Text>
       <TextInput
         style={[
@@ -280,21 +318,29 @@ export default function Register() {
         value={confirmPassword}
         onChangeText={setConfirmPassword}
         secureTextEntry
+        editable={!isLoading}
       />
       {mismatch && (
         <Text style={styles.errorText}>{t('register.errorConfirmPassword')}</Text>
       )}
 
-      {/* Botón registrar */}
       <TouchableOpacity
-        style={[styles.button, { backgroundColor: c.boton }]}
-        //onPress={handleRegister}
+        style={[styles.button, { backgroundColor: isLoading ? c.bordeInput : c.boton }]}
+        onPress={handleRegister}
+        disabled={isLoading}
       >
-        <Text style={[styles.buttonText, { color: c.botonTexto }]}>{t('register.button')}</Text>
+        {isLoading ? (
+          <ActivityIndicator color={c.botonTexto} />
+        ) : (
+          <Text style={[styles.buttonText, { color: c.botonTexto }]}>{t('register.button')}</Text>
+        )}
       </TouchableOpacity>
 
-      {/* Link a login */}
-      <TouchableOpacity style={styles.linkContainer} onPress={() => router.push('/(auth)/login')}>
+      <TouchableOpacity 
+        style={styles.linkContainer} 
+        onPress={() => router.replace('/login')}
+        disabled={isLoading}
+      >
         <Text style={{ color: c.subtexto }}>{t('register.alreadyAccount')} </Text>
         <Text style={[styles.link, { color: c.boton }]}>{t('register.loginLink')}</Text>
       </TouchableOpacity>

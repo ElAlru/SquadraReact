@@ -27,6 +27,7 @@ function DrawerContent({ navigation }: { navigation: any }) {
     { ruta: 'horarios', icono: '🕐', label: t('nav.schedule') },
     { ruta: 'tablon', icono: '📢', label: t('nav.board') },
     { ruta: 'mi-club', icono: '🏆', label: t('nav.myClub') },
+    { ruta: 'campos', icono: '📍', label: t('nav.fields') },
   ]
 
   const ITEMS_ROL = [
@@ -144,6 +145,7 @@ export default function ClubLayout() {
         name="gestion-presidente"
         options={{ drawerItemStyle: { display: esPresidente ? 'flex' : 'none' } }}
       />
+      <Drawer.Screen name="campos" />
     </Drawer>
   )
 }

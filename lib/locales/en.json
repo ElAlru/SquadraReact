@@ -246,6 +246,24 @@
   "myClub": "My club",
   "coachManagement": "Coach management",
   "presidentManagement": "President management",
-  "logout": "Log out"
+  "logout": "Log out",
+  "fields": "Fields"
+},
+"fields": {
+  "title": "Fields",
+  "addField": "+ Add field",
+  "name": "Field name",
+  "namePlaceholder": "E.g: Municipal Field",
+  "address": "Address",
+  "addressPlaceholder": "E.g: Main Street 1, Madrid",
+  "mapsUrl": "Google Maps link",
+  "mapsUrlPlaceholder": "https://maps.google.com/...",
+  "save": "Save field",
+  "cancel": "Cancel",
+  "viewMaps": "View in Maps",
+  "noFields": "No fields registered",
+  "deactivate": "Deactivate",
+  "activate": "Activate",
+  "active": "Active"
 }
 }

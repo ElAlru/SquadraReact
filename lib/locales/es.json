@@ -247,5 +247,24 @@
   "coachManagement": "Gestión entrenador",
   "presidentManagement": "Gestión presidente",
   "logout": "Cerrar sesión"
+,
+  "fields": "Campos"
+},
+"fields": {
+  "title": "Campos",
+  "addField": "+ Añadir campo",
+  "name": "Nombre del campo",
+  "namePlaceholder": "Ej: Campo Municipal",
+  "address": "Dirección",
+  "addressPlaceholder": "Ej: Calle Mayor 1, Madrid",
+  "mapsUrl": "Link de Google Maps",
+  "mapsUrlPlaceholder": "https://maps.google.com/...",
+  "save": "Guardar campo",
+  "cancel": "Cancelar",
+  "viewMaps": "Ver en Maps",
+  "noFields": "No hay campos registrados",
+  "deactivate": "Desactivar",
+  "activate": "Activar",
+  "active": "Activo"
 }
 }
