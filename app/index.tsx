@@ -1,6 +1,5 @@
-import { Stack } from 'expo-router'
-import '../lib/i18n'
+import { Redirect } from "expo-router";
 
-export default function RootLayout() {
-  return <Stack screenOptions={{ headerShown: false }} />
+export default function Index() {
+  return <Redirect href="/login" />;
 }
