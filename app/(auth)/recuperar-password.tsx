@@ -6,6 +6,8 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  ActivityIndicator,
+  Alert
 } from 'react-native'
 import { useTheme } from '../../lib/useTheme'
 import { router } from 'expo-router'
@@ -16,6 +18,44 @@ export default function RecuperarPassword() {
 
   const [email, setEmail] = useState('')
   const [sent, setSent] = useState(false)
+  const [loading, setLoading] = useState(false)
+
+const handleRecover = async () => {
+  if (!email) {
+    Alert.alert(t('common.error'), t('forgotPassword.emailRequired'))
+    return
+  }
+
+  setLoading(true)
+  try {
+    // CAMBIA ESTA IP por la que te sale en la terminal al hacer npx expo start
+    const miIpLocal = '192.168.1.130'; 
+    const urlRedireccion = `exp://${miIpLocal}:8081/--/reset-password`;
+
+    const response = await fetch('https://squadraapi.onrender.com/auth/recover', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ 
+        email: email.toLowerCase().trim(),
+        redirectTo: urlRedireccion // <--- Enviamos la URL a la API
+      }),
+    })
+
+    if (response.ok) {
+      setSent(true)
+    } else {
+      const errorData = await response.text()
+      Alert.alert(t('common.error'), errorData || t('forgotPassword.errorMessage'))
+    }
+  } catch (error) {
+    console.error('Error en recuperación:', error)
+    Alert.alert(t('common.error'), t('common.connectionError'))
+  } finally {
+    setLoading(false)
+  }
+}
 
   return (
     <View style={[styles.container, { backgroundColor: c.fondo }]}>
@@ -23,13 +63,13 @@ export default function RecuperarPassword() {
       {/* Brand */}
       <Text style={styles.brand}>SQUADRA</Text>
 
-      {/* Icono */}
+      {/* Icono Principal */}
       <View style={[styles.iconContainer, { backgroundColor: `${c.boton}15`, borderColor: `${c.boton}35` }]}>
         <Text style={styles.iconEmoji}>🔑</Text>
       </View>
 
       {sent ? (
-        /* Estado: email enviado */
+        /* ESTADO: Email enviado con éxito */
         <View style={styles.successContainer}>
           <View style={[styles.successBadge, { backgroundColor: `${c.boton}15`, borderColor: `${c.boton}35` }]}>
             <Text style={styles.successEmoji}>✅</Text>
@@ -43,7 +83,7 @@ export default function RecuperarPassword() {
           </View>
         </View>
       ) : (
-        /* Estado: formulario */
+        /* ESTADO: Formulario de entrada */
         <View style={styles.formContainer}>
           <Text style={[styles.title, { color: c.texto }]}>{t('forgotPassword.title')}</Text>
           <Text style={[styles.subtitle, { color: c.subtexto }]}>{t('forgotPassword.subtitle')}</Text>
@@ -58,22 +98,32 @@ export default function RecuperarPassword() {
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
+            editable={!loading}
           />
 
           <TouchableOpacity
-            style={[styles.button, { backgroundColor: c.boton }]}
-            onPress={() => email && setSent(true)}
+            style={[styles.button, { backgroundColor: c.boton, opacity: loading ? 0.7 : 1 }]}
+            onPress={handleRecover}
+            disabled={loading}
           >
-            <Text style={[styles.buttonText, { color: c.botonTexto }]}>{t('forgotPassword.button')}</Text>
+            {loading ? (
+              <ActivityIndicator color={c.botonTexto} />
+            ) : (
+              <Text style={[styles.buttonText, { color: c.botonTexto }]}>{t('forgotPassword.button')}</Text>
+            )}
           </TouchableOpacity>
         </View>
       )}
 
       {/* Volver al login */}
-          <TouchableOpacity style={styles.backContainer} onPress={() => router.back()}>
-            <Text style={[styles.backArrow, { color: c.boton }]}>←</Text>
-            <Text style={[styles.backText, { color: c.boton }]}>{t('forgotPassword.backToLogin')}</Text>
-          </TouchableOpacity>
+      <TouchableOpacity 
+        style={styles.backContainer} 
+        onPress={() => router.back()}
+        disabled={loading}
+      >
+        <Text style={[styles.backArrow, { color: c.boton }]}>←</Text>
+        <Text style={[styles.backText, { color: c.boton }]}>{t('forgotPassword.backToLogin')}</Text>
+      </TouchableOpacity>
     </View>
   )
 }
