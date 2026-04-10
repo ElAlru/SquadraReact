@@ -1,5 +1,6 @@
 import { Stack, useRouter, useSegments } from "expo-router";
 import { useEffect } from "react";
+import { apiFetch } from "../lib/api";
 import "../lib/i18n";
 import { useAuthStore } from "../lib/store";
 import { supabase } from "../lib/supabase";
@@ -11,8 +12,21 @@ export default function RootLayout() {
 
   useEffect(() => {
     // Recupera sesión persistida en SecureStore al abrir la app
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      session ? setAuth(session.user, session) : clearAuth();
+    supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session) {
+        setAuth(session.user, session);
+
+        // Carga el perfil completo desde tu API
+        try {
+          const res = await apiFetch("/profiles/me");
+          const profile = await res.json();
+          useAuthStore.getState().setProfile(profile);
+        } catch (e) {
+          console.error("Error cargando perfil:", e);
+        }
+      } else {
+        clearAuth();
+      }
     });
 
     // Escucha cambios: login, logout, token renovado

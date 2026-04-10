@@ -13,21 +13,20 @@ import { apiFetch } from "../../lib/api";
 import { useAuthStore } from "../../lib/store";
 import { useTheme } from "../../lib/useTheme";
 
-const ROL_LABEL: Record<string, string> = {
+const ROL_LABEL = {
   PRESIDENT: "👑 Presidente",
   COACH: "🎽 Entrenador",
   PLAYER: "⚽ Jugador",
   RELATIVE: "👨‍👧 Familiar",
   OTHER: "👤 Otro",
-};
+} as const;
 
-// Estructura que devolverá tu API cuando la implementes:
-// GET /miembros/mis-clubes
-// [{ id: 1, nombre: 'FC Ejemplo', rol: 'COACH' }, ...]
+export type ClubRole = keyof typeof ROL_LABEL;
+
 type ClubMembership = {
   id: number;
   nombre: string;
-  rol: keyof typeof ROL_LABEL;
+  rol: ClubRole;
 };
 
 export default function SelectorIndex() {
@@ -46,15 +45,10 @@ export default function SelectorIndex() {
     setIsLoading(true);
     try {
       const res = await apiFetch("/user-roles/mis-clubes");
-      const data = await res.json();
-      setClubes(
-        data.map((item: any) => ({
-          id: item.id,
-          nombre: item.nombre,
-          logoUrl: item.logoUrl,
-          rol: item.rol as keyof typeof ROL_LABEL, // ← cast explícito
-        })),
-      );
+      console.log("STATUS:", res.status);
+      console.log("OK:", res.ok);
+      const text = await res.text();
+      console.log("BODY:", text);
     } catch (e) {
       console.error("Error cargando clubes:", e);
     } finally {
