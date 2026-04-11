@@ -1,345 +1,264 @@
-import { useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import { 
+  StyleSheet, Text, View, ScrollView, TouchableOpacity, 
+  ActivityIndicator, LayoutAnimation, Platform, UIManager, RefreshControl 
 } from 'react-native'
 import { useTheme } from '../../lib/useTheme'
+import { useAuthStore } from '../../lib/store'
+import { apiFetch } from '../../lib/api'
 
-// MOCK — reemplazar con datos reales de la API
-const ANUNCIOS = [
-  {
-    id: 1,
-    titulo: 'Convocatoria jornada 5',
-    contenido: 'Se convoca a todos los jugadores para el partido del sábado. Concentración a las 10:00h en el campo municipal.',
-    autor: 'Marcos Álvarez',
-    publishedAt: '12/04/2025',
-    isPinned: true,
-    teamId: 1, // solo equipo
-    leido: false,
-  },
-  {
-    id: 2,
-    titulo: 'Cambio de horario entrenamiento',
-    contenido: 'El entrenamiento del lunes se adelanta a las 18:00h por obras en el campo.',
-    autor: 'Marcos Álvarez',
-    publishedAt: '11/04/2025',
-    isPinned: false,
-    teamId: 1,
-    leido: false,
-  },
-  {
-    id: 3,
-    titulo: 'Reunión de padres',
-    contenido: 'Se convoca reunión de padres el próximo viernes a las 20:00h en el club.',
-    autor: 'Pedro Rodríguez',
-    publishedAt: '10/04/2025',
-    isPinned: false,
-    teamId: null, // todo el club
-    leido: true,
-  },
-  {
-    id: 4,
-    titulo: 'Nuevo patrocinador',
-    contenido: 'El club anuncia un nuevo acuerdo de patrocinio con Deportes García.',
-    autor: 'Pedro Rodríguez',
-    publishedAt: '08/04/2025',
-    isPinned: false,
-    teamId: null,
-    leido: true,
-  },
-  {
-    id: 5,
-    titulo: 'Torneo de Semana Santa',
-    contenido: 'El equipo participará en el torneo de Semana Santa los días 17, 18 y 19 de abril.',
-    autor: 'Marcos Álvarez',
-    publishedAt: '07/04/2025',
-    isPinned: false,
-    teamId: 1,
-    leido: true,
-  },
-  {
-    id: 6,
-    titulo: 'Cuotas del mes de abril',
-    contenido: 'Recordamos que el plazo para el pago de la cuota de abril finaliza el día 15.',
-    autor: 'Pedro Rodríguez',
-    publishedAt: '05/04/2025',
-    isPinned: false,
-    teamId: null,
-    leido: true,
-  },
-  {
-    id: 7,
-    titulo: 'Partido aplazado',
-    contenido: 'El partido del sábado 5 de abril ha sido aplazado por lluvia. Nueva fecha pendiente.',
-    autor: 'Marcos Álvarez',
-    publishedAt: '04/04/2025',
-    isPinned: false,
-    teamId: 1,
-    leido: true,
-  },
-  {
-    id: 8,
-    titulo: 'Entrega de equipaciones',
-    contenido: 'La entrega de equipaciones de la nueva temporada se realizará el jueves a las 19:00h.',
-    autor: 'Pedro Rodríguez',
-    publishedAt: '02/04/2025',
-    isPinned: false,
-    teamId: null,
-    leido: true,
-  },
-  {
-    id: 9,
-    titulo: 'Inicio de temporada',
-    contenido: 'Bienvenidos a la temporada 2025/2026. Os deseamos mucho éxito a todos.',
-    autor: 'Pedro Rodríguez',
-    publishedAt: '01/04/2025',
-    isPinned: false,
-    teamId: null,
-    leido: true,
-  },
-]
-
-type Filtro = 'todos' | 'club' | 'equipo'
+// Habilitar animaciones en Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 export default function Tablon() {
   const c = useTheme()
-  const { t } = useTranslation()
-  const [filtro, setFiltro] = useState<Filtro>('todos')
-  const [expandido, setExpandido] = useState<number | null>(null)
+  
+  // --- DATA DEL STORE ---
+  const activeTeamId = useAuthStore((state: any) => state.activeTeamId)
+  const userId = useAuthStore((state: any) => state.user?.id)
+  
+  // --- ESTADOS ---
+  const [anuncios, setAnuncios] = useState<any[]>([])
+  const [filtro, setFiltro] = useState<'TODOS' | 'CLUB' | 'EQUIPO'>('TODOS')
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [expandedId, setExpandedId] = useState<number | null>(null)
 
-  const anunciosFiltrados = ANUNCIOS.filter((a) => {
-    if (filtro === 'club') return a.teamId === null
-    if (filtro === 'equipo') return a.teamId !== null
-    return true
-  }).sort((a, b) => {
-    if (a.isPinned && !b.isPinned) return -1
-    if (!a.isPinned && b.isPinned) return 1
-    return 0
-  })
+  // --- CARGA DE DATOS ---
+  const fetchAnuncios = useCallback(async () => {
+    if (!activeTeamId || !userId) return
+    try {
+      // Endpoint que creamos en el TablonController
+      const res = await apiFetch(`/api/tablon/todos?teamId=${activeTeamId}&userId=${userId}`)
+      if (res.ok) {
+        const data = await res.json()
+        setAnuncios(data)
+      }
+    } catch (e) {
+      console.error("Error al cargar el tablón:", e)
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }, [activeTeamId, userId])
 
-  const noLeidos = ANUNCIOS.filter((a) => !a.leido).length
+  useEffect(() => {
+    fetchAnuncios()
+  }, [fetchAnuncios])
+
+  // --- LÓGICA DE LECTURA Y EXPANSIÓN ---
+  const handlePressAnuncio = async (anuncio: any) => {
+    // Configurar animación suave para el despliegue
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut)
+    
+    const isOpening = expandedId !== anuncio.id
+    setExpandedId(isOpening ? anuncio.id : null)
+
+    // Si lo está abriendo y no estaba leído, lanzamos el proceso de lectura
+    if (isOpening && !anuncio.isRead) {
+      // 1. Actualización inmediata en la UI (Optimistic Update)
+      setAnuncios(prev => prev.map(a => 
+        a.id === anuncio.id ? { ...a, isRead: true } : a
+      ))
+
+      try {
+        // 2. Notificamos al Backend
+        await apiFetch(`/api/tablon/leer/${anuncio.id}?userId=${userId}`, {
+          method: 'POST'
+        })
+      } catch (e) {
+        console.error("No se pudo sincronizar la lectura con el servidor", e)
+        // Opcional: Si falla mucho, podrías revertir el estado aquí
+      }
+    }
+  }
+
+  // --- FILTRADO EN MEMORIA ---
+  const anunciosFiltrados = useMemo(() => {
+    return anuncios.filter(a => {
+      if (filtro === 'TODOS') return true
+      if (filtro === 'CLUB') return a.isClub
+      if (filtro === 'EQUIPO') return !a.isClub
+      return true
+    })
+  }, [anuncios, filtro])
+
+  if (loading && !refreshing) {
+    return (
+      <View style={[styles.center, { backgroundColor: c.fondo }]}>
+        <ActivityIndicator size="large" color={c.boton} />
+      </View>
+    )
+  }
 
   return (
-    <ScrollView
-      contentContainerStyle={[styles.container, { backgroundColor: c.fondo }]}
-      showsVerticalScrollIndicator={false}
-    >
-
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={[styles.titulo, { color: c.texto }]}>📢 {t('announcements.title')}</Text>
-          {noLeidos > 0 && (
-            <Text style={[styles.noLeidosText, { color: c.subtexto }]}>
-              {noLeidos} {t('announcements.unread')}
-            </Text>
-          )}
-        </View>
-      </View>
-
-      {/* Filtros */}
-      <View style={[styles.filtrosContainer, { backgroundColor: c.input, borderColor: c.bordeInput }]}>
-        {(['todos', 'club', 'equipo'] as Filtro[]).map((f) => (
-          <TouchableOpacity
-            key={f}
-            style={[
-              styles.filtroButton,
-              filtro === f && { backgroundColor: c.boton },
-            ]}
+    <View style={[styles.container, { backgroundColor: c.fondo }]}>
+      
+      {/* SELECTOR DE FILTROS */}
+      <View style={styles.filterRow}>
+        {(['TODOS', 'CLUB', 'EQUIPO'] as const).map((f) => (
+          <TouchableOpacity 
+            key={f} 
             onPress={() => setFiltro(f)}
+            style={[
+              styles.filterBtn, 
+              { backgroundColor: filtro === f ? c.boton : c.input }
+            ]}
           >
             <Text style={[
-              styles.filtroText,
-              { color: filtro === f ? c.botonTexto : c.subtexto },
+              styles.filterText, 
+              { color: filtro === f ? '#fff' : c.subtexto }
             ]}>
-              {t(`announcements.filter_${f}`)}
+              {f === 'TODOS' ? 'Todos' : f.charAt(0) + f.slice(1).toLowerCase()}
             </Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      {/* Lista */}
-      <View style={styles.lista}>
-        {anunciosFiltrados.map((anuncio) => {
-          const abierto = expandido === anuncio.id
-          return (
-            <TouchableOpacity
-              key={anuncio.id}
+      <ScrollView 
+        contentContainerStyle={{ padding: 20, paddingBottom: 50 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAnuncios(); }} tintColor={c.boton} />
+        }
+      >
+        {anunciosFiltrados.length > 0 ? (
+          anunciosFiltrados.map((a) => (
+            <TouchableOpacity 
+              key={a.id} 
+              activeOpacity={0.8}
+              onPress={() => handlePressAnuncio(a)}
               style={[
-                styles.card,
-                {
-                  backgroundColor: c.input,
-                  borderColor: anuncio.isPinned ? `${c.boton}60` : c.bordeInput,
-                  borderWidth: anuncio.isPinned ? 1.5 : 1,
-                },
+                styles.card, 
+                { 
+                  backgroundColor: c.input, 
+                  borderColor: a.isPinned ? c.boton : 'transparent',
+                  borderWidth: a.isPinned ? 1.5 : 0 
+                }
               ]}
-              onPress={() => setExpandido(abierto ? null : anuncio.id)}
-              activeOpacity={0.85}
             >
-              {/* Fila superior */}
+              {/* CABECERA: Badges y Punto de lectura */}
               <View style={styles.cardHeader}>
-                <View style={styles.cardHeaderLeft}>
-                  {/* Punto no leído */}
-                  {!anuncio.leido && (
-                    <View style={[styles.unreadDot, { backgroundColor: c.boton }]} />
-                  )}
-                  {/* Badge fijado */}
-                  {anuncio.isPinned && (
-                    <View style={[styles.pinnedBadge, { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` }]}>
-                      <Text style={[styles.pinnedText, { color: c.boton }]}>📌 Fijado</Text>
+                <View style={styles.badgeRow}>
+                  {a.isPinned && (
+                    <View style={[styles.pinnedBadge, { backgroundColor: `${c.boton}20` }]}>
+                      <Text style={[styles.pinnedText, { color: c.boton }]}>📌 FIJADO</Text>
                     </View>
                   )}
-                  {/* Badge club/equipo */}
                   <View style={[
-                    styles.scopeBadge,
-                    {
-                      backgroundColor: anuncio.teamId ? '#3b82f618' : '#f59e0b18',
-                      borderColor: anuncio.teamId ? '#3b82f635' : '#f59e0b35',
-                    }
+                    styles.typeBadge, 
+                    { backgroundColor: a.isClub ? '#6366f120' : '#10b98120' }
                   ]}>
                     <Text style={[
-                      styles.scopeText,
-                      { color: anuncio.teamId ? '#3b82f6' : '#f59e0b' }
+                      styles.typeText, 
+                      { color: a.isClub ? '#6366f1' : '#10b981' }
                     ]}>
-                      {anuncio.teamId ? '👕 Equipo' : '🏆 Club'}
+                      {a.isClub ? 'CLUB' : 'EQUIPO'}
                     </Text>
                   </View>
                 </View>
-                <Text style={[styles.cardArrow, { color: c.subtexto }]}>
-                  {abierto ? '▲' : '▼'}
-                </Text>
+
+                {!a.isRead && (
+                  <View style={[styles.unreadDot, { backgroundColor: c.boton }]} />
+                )}
               </View>
 
-              {/* Título */}
-              <Text style={[styles.cardTitulo, { color: c.texto }]}>{anuncio.titulo}</Text>
+              {/* TÍTULO */}
+              <Text style={[styles.title, { color: c.texto }]}>{a.titulo}</Text>
 
-              {/* Contenido expandido */}
-              {abierto && (
-                <Text style={[styles.cardContenido, { color: c.subtexto }]}>
-                  {anuncio.contenido}
-                </Text>
+              {/* CONTENIDO (Expandible) */}
+              <Text 
+                style={[styles.content, { color: c.subtexto }]} 
+                numberOfLines={expandedId === a.id ? undefined : 3}
+              >
+                {a.contenido}
+              </Text>
+
+              {/* PIE DE TARJETA (Solo visible si está expandido) */}
+              {expandedId === a.id && (
+                <View style={[styles.expandedFooter, { borderTopColor: `${c.subtexto}20` }]}>
+                  <View style={styles.footerItem}>
+                    <Text style={[styles.footerLabel, { color: c.subtexto }]}>Autor:</Text>
+                    <Text style={[styles.footerValue, { color: c.texto }]}>{a.autor}</Text>
+                  </View>
+                  <View style={styles.footerItem}>
+                    <Text style={[styles.footerLabel, { color: c.subtexto }]}>Fecha:</Text>
+                    <Text style={[styles.footerValue, { color: c.texto }]}>{a.fecha}</Text>
+                  </View>
+                </View>
               )}
-
-              {/* Footer */}
-              <View style={styles.cardFooter}>
-                <Text style={[styles.cardMeta, { color: c.subtexto }]}>✍️ {anuncio.autor}</Text>
-                <Text style={[styles.cardMeta, { color: c.subtexto }]}>{anuncio.publishedAt}</Text>
-              </View>
             </TouchableOpacity>
-          )
-        })}
-      </View>
-
-    </ScrollView>
+          ))
+        ) : (
+          <View style={styles.emptyState}>
+            <Text style={{ fontSize: 40, marginBottom: 10 }}>📢</Text>
+            <Text style={[styles.emptyText, { color: c.subtexto }]}>
+              No hay anuncios en esta sección.
+            </Text>
+          </View>
+        )}
+      </ScrollView>
+    </View>
   )
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    padding: 24,
-    paddingTop: 60,
-    paddingBottom: 40,
+  container: { flex: 1, paddingTop: 60 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  
+  filterRow: { 
+    flexDirection: 'row', 
+    justifyContent: 'center', 
+    gap: 10, 
+    marginBottom: 10,
+    paddingHorizontal: 20 
   },
-  header: {
-    marginBottom: 16,
-  },
-  titulo: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    marginBottom: 2,
-  },
-  noLeidosText: {
-    fontSize: 13,
-  },
+  filterBtn: { paddingHorizontal: 18, paddingVertical: 8, borderRadius: 20 },
+  filterText: { fontWeight: 'bold', fontSize: 13 },
 
-  // Filtros
-  filtrosContainer: {
-    flexDirection: 'row',
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 4,
-    marginBottom: 20,
-    gap: 4,
+  card: { 
+    padding: 18, 
+    borderRadius: 20, 
+    marginBottom: 16, 
+    // Sombras ligeras para elevación
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3 
   },
-  filtroButton: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 8,
-    alignItems: 'center',
+  cardHeader: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    marginBottom: 12 
   },
-  filtroText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
+  badgeRow: { flexDirection: 'row', gap: 8 },
+  
+  pinnedBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  pinnedText: { fontSize: 10, fontWeight: '900' },
+  
+  typeBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  typeText: { fontSize: 10, fontWeight: 'bold' },
+  
+  unreadDot: { width: 10, height: 10, borderRadius: 5 },
+  
+  title: { fontSize: 18, fontWeight: 'bold', marginBottom: 8 },
+  content: { fontSize: 15, lineHeight: 22 },
 
-  // Lista
-  lista: {
-    gap: 10,
+  expandedFooter: { 
+    marginTop: 20, 
+    paddingTop: 15, 
+    borderTopWidth: 1, 
+    flexDirection: 'row', 
+    justifyContent: 'space-between' 
   },
-  card: {
-    borderRadius: 14,
-    padding: 14,
-    gap: 8,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  cardHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    flexWrap: 'wrap',
-  },
-  unreadDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  pinnedBadge: {
-    borderWidth: 1,
-    borderRadius: 20,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  pinnedText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  scopeBadge: {
-    borderWidth: 1,
-    borderRadius: 20,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  scopeText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  cardArrow: {
-    fontSize: 10,
-  },
-  cardTitulo: {
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  cardContenido: {
-    fontSize: 13,
-    lineHeight: 20,
-    paddingTop: 4,
-  },
-  cardFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 4,
-  },
-  cardMeta: {
-    fontSize: 12,
-  },
+  footerItem: { gap: 2 },
+  footerLabel: { fontSize: 11, textTransform: 'uppercase', fontWeight: 'bold' },
+  footerValue: { fontSize: 13, fontWeight: '600' },
+
+  emptyState: { alignItems: 'center', marginTop: 100 },
+  emptyText: { fontSize: 16, fontWeight: '500' }
 })
