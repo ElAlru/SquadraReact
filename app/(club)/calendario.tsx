@@ -38,9 +38,11 @@ export default function Calendario() {
 
   // --- 1. DATOS DEL STORE ---
   const activeClubId = useAuthStore((state: any) => state.activeClubId)
-  const activeTeamId = useAuthStore((state: any) => state.activeTeamId) // 🟢 Sacamos el equipo
-  const userRole = useAuthStore((state: any) => state.activeClubRole || 'COACH')
-  const puedeEditar = userRole === 'COACH' || userRole === 'PRESIDENT'
+  const activeTeamId = useAuthStore((state: any) => state.activeTeamId)
+  const userRole = useAuthStore((state: any) => state.user?.role || 'PLAYER')
+  
+  // 🟢 RBAC: Solo el PRESIDENTE o el STAFF/COACH pueden editar el calendario
+  const puedeEditar = userRole === 'PRESIDENT' || userRole === 'STAFF' || userRole === 'COACH'
 
   // --- 2. ESTADOS ---
   const hoy = new Date()
@@ -53,6 +55,7 @@ export default function Calendario() {
   const [nuevoTipo, setNuevoTipo] = useState<'PARTIDO' | 'ENTRENAMIENTO'>('ENTRENAMIENTO')
   const [nuevoTipoPartido, setNuevoTipoPartido] = useState<string>('LEAGUE') 
   const [nuevaHora, setNuevaHora] = useState('')
+  const [nuevaHoraFin, setNuevaHoraFin] = useState('') // 🟢 Añadido para entrenamientos
   
   // Modal y doble estado
   const [modalVisible, setModalVisible] = useState(false)
@@ -64,10 +67,10 @@ export default function Calendario() {
 
   // --- 3. PETICIÓN A LA API (GET) ---
   const fetchEventos = useCallback(async () => {
-    const clubId = activeClubId || 7 // Fallback temporal
+    if (!activeClubId) return
     setLoading(true)
     try {
-      const response = await apiFetch(`/api/eventos/calendario?clubId=${clubId}&year=${anio}&month=${mes + 1}`)
+      const response = await apiFetch(`/api/eventos/calendario?clubId=${activeClubId}&year=${anio}&month=${mes + 1}`)
       if (response.ok) {
         const data = await response.json()
         const agrupados: Record<string, any[]> = {}
@@ -77,11 +80,10 @@ export default function Calendario() {
         })
         setEventosDict(agrupados)
       } else {
-        console.error("Error al cargar el calendario del servidor")
-        setEventosDict({}) // Vaciamos si hay error
+        setEventosDict({})
       }
     } catch (error) {
-      console.error("Fallo:", error)
+      console.error("Fallo al cargar el calendario:", error)
     } finally {
       setLoading(false)
     }
@@ -102,8 +104,13 @@ export default function Calendario() {
   const formatClave = (dia: number) => `${anio}-${(mes + 1).toString().padStart(2, '0')}-${dia.toString().padStart(2, '0')}`
 
   const handleDia = (dia: number) => {
-    setDiaSeleccionado(formatClave(dia))
-    setModoModal('ver') // Siempre abrimos en modo vista primero
+    const clave = formatClave(dia)
+    setDiaSeleccionado(clave)
+    
+    // Si no hay eventos y no puede editar, no hacemos nada (Caso 6 estricto para jugadores)
+    if (!eventosDict[clave] && !puedeEditar) return
+    
+    setModoModal('ver') 
     setModalVisible(true)
   }
 
@@ -121,14 +128,15 @@ export default function Calendario() {
     
     try {
       const payload = {
-        clubId: activeClubId || 7, // Ajusta a tus datos de prueba si hace falta
-        equipoId: activeTeamId || 1, // 🟢 Ajusta a tu equipo de prueba (vital para que Java no salte error)
+        clubId: activeClubId,
+        equipoId: activeTeamId, 
         fecha: diaSeleccionado,
         titulo: nuevoTitulo,
         tipo: nuevoTipo,
         tipoPartido: nuevoTipo === 'PARTIDO' ? nuevoTipoPartido : null,
         horaInicio: nuevaHora,
-        esLocal: true, // Lo forzamos a local por ahora, podrías añadir un botón más adelante
+        horaFin: nuevoTipo === 'ENTRENAMIENTO' ? nuevaHoraFin : null, // 🟢 Guardamos hora fin si es entreno
+        esLocal: true,
       }
 
       const response = await apiFetch('/api/eventos', {
@@ -141,13 +149,12 @@ export default function Calendario() {
         setModoModal('ver')
         setNuevoTitulo('')
         setNuevaHora('')
-        fetchEventos() // 🔄 Recarga silenciosa para pintar el nuevo puntito
+        setNuevaHoraFin('')
+        fetchEventos() // 🔄 Recarga silenciosa
       } else {
-        const errText = await response.text()
-        Alert.alert("Error del servidor", errText || "No se pudo guardar el evento")
+        Alert.alert("Error", "No se pudo guardar el evento")
       }
     } catch (error) {
-      console.error(error)
       Alert.alert("Error", "Fallo de conexión con el servidor")
     }
   }
@@ -160,10 +167,9 @@ export default function Calendario() {
         { text: "Cancelar", style: "cancel" },
         { text: "Eliminar", style: "destructive", onPress: async () => {
           try {
-            // Pasamos el ID y el tipo al endpoint de Spring Boot
             const response = await apiFetch(`/api/eventos/${id}?tipo=${tipo}`, { method: 'DELETE' })
             if (response.ok) {
-              fetchEventos() // 🔄 Refrescamos el calendario
+              fetchEventos()
             } else {
               Alert.alert("Error", "No se pudo eliminar el evento")
             }
@@ -183,7 +189,6 @@ export default function Calendario() {
     <View style={[styles.wrapper, { backgroundColor: c.fondo }]}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         
-        {/* Cabecera */}
         <Text style={[styles.titulo, { color: c.texto }]}>📅 {t('calendar.title', 'Calendario')}</Text>
 
         <View style={styles.navMes}>
@@ -222,14 +227,12 @@ export default function Calendario() {
               >
                 <Text style={[styles.celdaNumero, { color: esHoy ? c.boton : c.texto }, esHoy && { fontWeight: 'bold' }]}>{dia}</Text>
                 
-                {/* Lógica de múltiples puntos */}
                 <View style={styles.puntosRow}>
                   {eventos.slice(0, 3).map((e, idx) => (
                     <View key={idx} style={[styles.punto, { backgroundColor: e.tipo === 'PARTIDO' ? c.boton : '#3b82f6' }]} />
                   ))}
                   {eventos.length > 3 && <Text style={{fontSize: 9, color: c.subtexto, fontWeight: 'bold'}}>+</Text>}
                 </View>
-                
               </TouchableOpacity>
             )
           })}
@@ -242,7 +245,7 @@ export default function Calendario() {
         </View>
       </ScrollView>
 
-      {/* --- MODAL DE EVENTOS (DOBLE ESTADO) --- */}
+      {/* --- MODAL DE EVENTOS --- */}
       <Modal visible={modalVisible} transparent animationType="fade" onRequestClose={() => setModalVisible(false)}>
         <Pressable style={styles.modalOverlay} onPress={() => setModalVisible(false)}>
           <Pressable style={[styles.modalCard, { backgroundColor: c.fondo, borderColor: c.bordeInput }]} onPress={() => {}}>
@@ -271,18 +274,41 @@ export default function Calendario() {
                             <Text style={[styles.modalEventoTitulo, { color: c.texto, flex: 1 }]}>
                               {evento.tipo === 'PARTIDO' ? '⚽' : '🏃'} {evento.titulo}
                             </Text>
-                            {/* 🟢 Pasamos el ID y el TIPO a la función de eliminar */}
                             {puedeEditar && (
                               <TouchableOpacity onPress={() => handleEliminarEvento(evento.id, evento.tipo)} style={{padding: 5}}>
                                 <Text style={{fontSize: 18}}>🗑️</Text>
                               </TouchableOpacity>
                             )}
                           </View>
+                          
+                          {/* 🟢 BLOQUE DE METADATOS ACTUALIZADO (EL PARCHE DEL VAR) */}
                           <View style={styles.modalEventoMeta}>
-                            <Text style={[styles.modalEventoMetaText, { color: c.subtexto }]}>🕐 {evento.horaInicio}</Text>
+                            <Text style={[styles.modalEventoMetaText, { color: c.subtexto }]}>
+                              🕐 {evento.horaInicio} {evento.tipo === 'ENTRENAMIENTO' && evento.horaFin ? `- ${evento.horaFin}` : ''}
+                            </Text>
+                            
                             {evento.lugar && <Text style={[styles.modalEventoMetaText, { color: c.subtexto }]}>📍 {evento.lugar}</Text>}
-                            {evento.esLocal !== undefined && <Text style={[styles.modalEventoMetaText, { color: evento.esLocal ? c.boton : '#ef4444' }]}>{evento.esLocal ? '🏠 Local' : '✈️ Visitante'}</Text>}
+                            
+                            <View style={{ flexDirection: 'row', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                              {evento.esLocal !== undefined && (
+                                <Text style={[styles.modalEventoMetaText, { color: evento.esLocal ? c.boton : '#ef4444', fontWeight: 'bold' }]}>
+                                  {evento.esLocal ? '🏠 Local' : '✈️ Visitante'}
+                                </Text>
+                              )}
+                              {evento.tipo === 'PARTIDO' && evento.tipoPartido && (
+                                <Text style={[styles.modalEventoMetaText, { color: c.subtexto, backgroundColor: `${c.subtexto}20`, paddingHorizontal: 6, borderRadius: 4, overflow: 'hidden' }]}>
+                                  🏆 {TIPO_PARTIDO_LABEL[evento.tipoPartido] || 'Partido'}
+                                </Text>
+                              )}
+                            </View>
+
+                            {evento.tipo === 'PARTIDO' && evento.isClosed && (
+                              <Text style={[styles.modalEventoMetaText, { color: c.texto, fontWeight: 'bold', marginTop: 4, fontSize: 15 }]}>
+                                Resultado: {evento.resultado || 'Sin resultado'}
+                              </Text>
+                            )}
                           </View>
+
                         </View>
                       ))
                     ) : (
@@ -298,61 +324,72 @@ export default function Calendario() {
                 )}
               </>
             ) : (
-             /* --- ESTADO 2: CREAR EVENTO --- */
-            <View style={{ gap: 15, width: '100%' }}>
-              <View style={{flexDirection: 'row', gap: 10}}>48123422q
-                <TouchableOpacity 
-                  style={[styles.tipoBtn, nuevoTipo === 'ENTRENAMIENTO' && {backgroundColor: '#3b82f6', borderColor: '#3b82f6'}]}
-                  onPress={() => setNuevoTipo('ENTRENAMIENTO')}
-                ><Text style={{color: nuevoTipo === 'ENTRENAMIENTO' ? '#fff' : c.texto, fontWeight: 'bold'}}>🏃 Entreno</Text></TouchableOpacity>
+              /* --- ESTADO 2: CREAR EVENTO --- */
+              <View style={{ gap: 15, width: '100%' }}>
+                <View style={{flexDirection: 'row', gap: 10}}>
+                  <TouchableOpacity 
+                    style={[styles.tipoBtn, nuevoTipo === 'ENTRENAMIENTO' && {backgroundColor: '#3b82f6', borderColor: '#3b82f6'}]}
+                    onPress={() => setNuevoTipo('ENTRENAMIENTO')}
+                  ><Text style={{color: nuevoTipo === 'ENTRENAMIENTO' ? '#fff' : c.texto, fontWeight: 'bold'}}>🏃 Entreno</Text></TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={[styles.tipoBtn, nuevoTipo === 'PARTIDO' && {backgroundColor: c.boton, borderColor: c.boton}]}
+                    onPress={() => setNuevoTipo('PARTIDO')}
+                  ><Text style={{color: nuevoTipo === 'PARTIDO' ? '#fff' : c.texto, fontWeight: 'bold'}}>⚽ Partido</Text></TouchableOpacity>
+                </View>
+
+                {nuevoTipo === 'PARTIDO' && (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                    {Object.entries(TIPO_PARTIDO_LABEL).map(([key, label]) => (
+                      <TouchableOpacity
+                        key={key}
+                        style={{
+                          paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1,
+                          backgroundColor: nuevoTipoPartido === key ? c.boton : c.input,
+                          borderColor: nuevoTipoPartido === key ? c.boton : c.bordeInput
+                        }}
+                        onPress={() => setNuevoTipoPartido(key)}
+                      >
+                        <Text style={{ color: nuevoTipoPartido === key ? '#fff' : c.subtexto, fontSize: 13, fontWeight: 'bold' }}>
+                          {label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                )}
+
+                <TextInput
+                  placeholder={nuevoTipo === 'PARTIDO' ? "Título (ej: vs Getafe)" : "Título (ej: Físico y Táctica)"}
+                  placeholderTextColor={c.subtexto}
+                  style={[styles.inputField, { color: c.texto, borderColor: c.bordeInput, backgroundColor: c.input }]}
+                  value={nuevoTitulo}
+                  onChangeText={setNuevoTitulo}
+                />
                 
-                <TouchableOpacity 
-                  style={[styles.tipoBtn, nuevoTipo === 'PARTIDO' && {backgroundColor: c.boton, borderColor: c.boton}]}
-                  onPress={() => setNuevoTipo('PARTIDO')}
-                ><Text style={{color: nuevoTipo === 'PARTIDO' ? '#fff' : c.texto, fontWeight: 'bold'}}>⚽ Partido</Text></TouchableOpacity>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <TextInput
+                    placeholder="Inicio (19:00)"
+                    placeholderTextColor={c.subtexto}
+                    style={[styles.inputField, { flex: 1, color: c.texto, borderColor: c.bordeInput, backgroundColor: c.input }]}
+                    value={nuevaHora}
+                    onChangeText={setNuevaHora}
+                  />
+                  {/* 🟢 Mostrar hora fin solo para entrenamientos */}
+                  {nuevoTipo === 'ENTRENAMIENTO' && (
+                    <TextInput
+                      placeholder="Fin (20:30)"
+                      placeholderTextColor={c.subtexto}
+                      style={[styles.inputField, { flex: 1, color: c.texto, borderColor: c.bordeInput, backgroundColor: c.input }]}
+                      value={nuevaHoraFin}
+                      onChangeText={setNuevaHoraFin}
+                    />
+                  )}
+                </View>
+
+                <TouchableOpacity style={[styles.btnAñadir, { backgroundColor: c.boton, width: '100%' }]} onPress={handleGuardarEvento}>
+                  <Text style={styles.btnAñadirText}>Guardar Evento</Text>
+                </TouchableOpacity>
               </View>
-
-              {/* CHIPS DE TIPO DE PARTIDO */}
-              {nuevoTipo === 'PARTIDO' && (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-                  {Object.entries(TIPO_PARTIDO_LABEL).map(([key, label]) => (
-                    <TouchableOpacity
-                      key={key}
-                      style={{
-                        paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1,
-                        backgroundColor: nuevoTipoPartido === key ? c.boton : c.input,
-                        borderColor: nuevoTipoPartido === key ? c.boton : c.bordeInput
-                      }}
-                      onPress={() => setNuevoTipoPartido(key)}
-                    >
-                      <Text style={{ color: nuevoTipoPartido === key ? '#fff' : c.subtexto, fontSize: 13, fontWeight: 'bold' }}>
-                        {label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              )}
-
-              <TextInput
-                placeholder={nuevoTipo === 'PARTIDO' ? "Título (ej: vs Getafe)" : "Título (ej: Físico y Táctica)"}
-                placeholderTextColor={c.subtexto}
-                style={[styles.inputField, { color: c.texto, borderColor: c.bordeInput, backgroundColor: c.input }]}
-                value={nuevoTitulo}
-                onChangeText={setNuevoTitulo}
-              />
-              <TextInput
-                placeholder="Hora (ej: 19:00)"
-                placeholderTextColor={c.subtexto}
-                style={[styles.inputField, { color: c.texto, borderColor: c.bordeInput, backgroundColor: c.input }]}
-                value={nuevaHora}
-                onChangeText={setNuevaHora}
-                keyboardType="numeric"
-              />
-
-              <TouchableOpacity style={[styles.btnAñadir, { backgroundColor: c.boton, width: '100%' }]} onPress={handleGuardarEvento}>
-                <Text style={styles.btnAñadirText}>Guardar Evento</Text>
-              </TouchableOpacity>
-            </View>
             )}
           </Pressable>
         </Pressable>
