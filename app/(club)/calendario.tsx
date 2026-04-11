@@ -300,7 +300,7 @@ export default function Calendario() {
             ) : (
              /* --- ESTADO 2: CREAR EVENTO --- */
             <View style={{ gap: 15, width: '100%' }}>
-              <View style={{flexDirection: 'row', gap: 10}}>
+              <View style={{flexDirection: 'row', gap: 10}}>48123422q
                 <TouchableOpacity 
                   style={[styles.tipoBtn, nuevoTipo === 'ENTRENAMIENTO' && {backgroundColor: '#3b82f6', borderColor: '#3b82f6'}]}
                   onPress={() => setNuevoTipo('ENTRENAMIENTO')}
