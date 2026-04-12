@@ -12,12 +12,14 @@ export default function Inicio() {
   const router = useRouter()
 
   // --- 1. DATOS DEL STORE ---
-  const userName = useAuthStore((state: any) => state.user?.name || 'Jugador')
+  // 🟢 CORREGIDO: Usamos 'profile' que es donde guardamos los datos de nuestro backend
+  const profile = useAuthStore((state: any) => state.profile)
   const clubName = useAuthStore((state: any) => state.activeClubName || 'Mi Club')
   const clubLogo = useAuthStore((state: any) => state.activeClubLogo)
-  const teamName = useAuthStore((state: any) => state.activeTeamName || 'Primer Equipo')
+  const teamName = useAuthStore((state: any) => state.activeTeamName)
   const seasonName = useAuthStore((state: any) => state.activeSeasonName || 'Temporada 25/26')
   const activeTeamId = useAuthStore((state: any) => state.activeTeamId)
+  const activeRole = useAuthStore((state: any) => state.activeRole)
 
   // --- 2. ESTADOS ---
   const [saludo, setSaludo] = useState('')
@@ -35,18 +37,19 @@ export default function Inicio() {
 
   // --- 4. PETICIONES A LA API ---
   const fetchDashboardData = useCallback(async () => {
-    if (!activeTeamId) return; // Si no hay equipo, no podemos pedir datos
+    if (!activeTeamId) {
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
     try {
-      // 1. Pedimos el último anuncio (usando tu AnuncioResumenDTO)
       const resAnuncio = await apiFetch(`/api/tablon/ultimo?teamId=${activeTeamId}`)
       if (resAnuncio.ok) {
-        // Si no hay anuncio (204 No Content), data será null
         const dataAnuncio = resAnuncio.status === 204 ? null : await resAnuncio.json()
         setUltimoAnuncio(dataAnuncio)
       }
 
-      // 2. Pedimos los próximos 3 eventos
       const resEventos = await apiFetch(`/api/eventos/proximos?teamId=${activeTeamId}&limit=3`)
       if (resEventos.ok) {
         const dataEventos = await resEventos.json()
@@ -71,7 +74,10 @@ export default function Inicio() {
         <View style={styles.headerRow}>
           <View style={{ flex: 1 }}>
             <Text style={[styles.saludo, { color: c.subtexto }]}>{saludo},</Text>
-            <Text style={[styles.userName, { color: c.texto }]}>{userName} 👋</Text>
+            {/* 🟢 CORREGIDO: Usamos profile?.firstName para que salga tu nombre real */}
+            <Text style={[styles.userName, { color: c.texto }]}>
+              {profile?.firstName || 'Presidente'} 👋
+            </Text>
           </View>
           {clubLogo ? (
             <Image source={{ uri: clubLogo }} style={styles.clubLogo} />
@@ -85,20 +91,38 @@ export default function Inicio() {
         <Text style={[styles.clubName, { color: c.texto }]}>{clubName}</Text>
 
         {/* CHIPS DE INFORMACIÓN */}
-        <View style={styles.chipsRow}>
-          <View style={[styles.chip, { backgroundColor: `${c.boton}20` }]}>
-            <Text style={[styles.chipText, { color: c.boton }]}>📅 {seasonName}</Text>
-          </View>
-          <View style={[styles.chip, { backgroundColor: `${c.boton}20` }]}>
-            <Text style={[styles.chipText, { color: c.boton }]}>👕 {teamName}</Text>
-          </View>
-        </View>
+        {activeTeamId && (
+            <View style={styles.chipsRow}>
+                <View style={[styles.chip, { backgroundColor: `${c.boton}20` }]}>
+                    <Text style={[styles.chipText, { color: c.boton }]}>📅 {seasonName}</Text>
+                </View>
+                <View style={[styles.chip, { backgroundColor: `${c.boton}20` }]}>
+                    <Text style={[styles.chipText, { color: c.boton }]}>👕 {teamName || 'Equipo'}</Text>
+                </View>
+            </View>
+        )}
 
         {loading ? (
           <ActivityIndicator size="large" color={c.boton} style={{ marginTop: 40 }} />
+        ) : !activeTeamId ? (
+          <View style={[styles.noTeamCard, { backgroundColor: c.input }]}>
+            <Text style={[styles.noTeamTitle, { color: c.texto }]}>¡Bienvenido a tu club!</Text>
+            <Text style={[styles.noTeamSub, { color: c.subtexto }]}>
+              {activeRole === 'PRESIDENT' 
+                ? 'Como presidente, el siguiente paso es crear tu primer equipo desde el menú de gestión.' 
+                : 'Aún no tienes un equipo asignado en este club.'}
+            </Text>
+            {activeRole === 'PRESIDENT' && (
+                <TouchableOpacity 
+                    style={[styles.btnCrearEquipo, { backgroundColor: c.boton }]}
+                    onPress={() => router.push('/gestion-presidente')}
+                >
+                    <Text style={styles.btnCrearEquipoText}>Ir a Gestión</Text>
+                </TouchableOpacity>
+            )}
+          </View>
         ) : (
           <>
-            {/* --- SECCIÓN TABLÓN --- */}
             <View style={styles.sectionHeader}>
               <Text style={[styles.sectionTitle, { color: c.texto }]}>Último Anuncio</Text>
               <TouchableOpacity onPress={() => router.push('/tablon')}>
@@ -112,7 +136,6 @@ export default function Inicio() {
                 onPress={() => router.push('/tablon')}
               >
                 <Text style={[styles.anuncioTitulo, { color: c.texto }]}>📌 {ultimoAnuncio.titulo}</Text>
-                {/* 🟢 Usamos .contenido aquí que es el resumen que manda el Back */}
                 <Text style={[styles.anuncioResumen, { color: c.subtexto }]} numberOfLines={2}>
                   {ultimoAnuncio.contenido}
                 </Text>
@@ -127,7 +150,6 @@ export default function Inicio() {
               </View>
             )}
 
-            {/* --- SECCIÓN PRÓXIMOS EVENTOS --- */}
             <View style={[styles.sectionHeader, { marginTop: 30 }]}>
               <Text style={[styles.sectionTitle, { color: c.texto }]}>Próximos Eventos</Text>
               <TouchableOpacity onPress={() => router.push('/horarios')}>
@@ -149,23 +171,15 @@ export default function Inicio() {
                       <Text style={[styles.eventoTitulo, { color: c.texto, flex: 1 }]}>
                         {evento.tipo === 'PARTIDO' ? '⚽' : '🏃'} {evento.titulo}
                       </Text>
-                      {evento.tipo === 'PARTIDO' && (
-                        <View style={[styles.badge, { backgroundColor: evento.esLocal ? `${c.boton}20` : '#ef444420' }]}>
-                          <Text style={[styles.badgeText, { color: evento.esLocal ? c.boton : '#ef4444' }]}>
-                            {evento.esLocal ? 'Local' : 'Visitante'}
-                          </Text>
-                        </View>
-                      )}
                     </View>
                     <View style={styles.eventoMeta}>
                       <Text style={[styles.eventoMetaText, { color: c.subtexto }]}>📅 {evento.fecha} - {evento.horaInicio}</Text>
-                      {evento.lugar && <Text style={[styles.eventoMetaText, { color: c.subtexto }]}>📍 {evento.lugar}</Text>}
                     </View>
                   </View>
                 ))
               ) : (
                 <View style={[styles.card, { backgroundColor: c.input, opacity: 0.7, borderStyle: 'dashed' }]}>
-                  <Text style={{ color: c.subtexto, textAlign: 'center' }}>No hay eventos programados próximamente.</Text>
+                  <Text style={{ color: c.subtexto, textAlign: 'center' }}>No hay eventos programados.</Text>
                 </View>
               )}
             </View>
@@ -200,6 +214,9 @@ const styles = StyleSheet.create({
   eventoTitulo: { fontSize: 15, fontWeight: 'bold' },
   eventoMeta: { gap: 4 },
   eventoMetaText: { fontSize: 13 },
-  badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  badgeText: { fontSize: 11, fontWeight: 'bold' },
+  noTeamCard: { padding: 30, borderRadius: 20, alignItems: 'center', marginTop: 20 },
+  noTeamTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 10 },
+  noTeamSub: { fontSize: 14, textAlign: 'center', marginBottom: 20, lineHeight: 20 },
+  btnCrearEquipo: { paddingHorizontal: 25, paddingVertical: 12, borderRadius: 12 },
+  btnCrearEquipoText: { color: 'white', fontWeight: 'bold' }
 })

@@ -1,25 +1,24 @@
 import { Drawer } from 'expo-router/drawer'
 import { useTranslation } from 'react-i18next'
-import {
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native'
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useTheme } from '../../lib/useTheme'
-
-type Rol = 'PRESIDENT' | 'COACH' | 'PLAYER' | 'RELATIVE' | 'OTHER'
-const getRolUsuario = (): Rol => 'PRESIDENT'
-const ROL_USUARIO = getRolUsuario()
-const NOMBRE_USUARIO = 'Pedro Rodríguez'
-const CLUB_NOMBRE = 'FC Ejemplo'
-
-const esCoach = ROL_USUARIO === 'COACH' || ROL_USUARIO === 'PRESIDENT'
-const esPresidente = ROL_USUARIO === 'PRESIDENT'
+import { useAuthStore } from '../../lib/store'
+import { useRouter } from 'expo-router'
 
 function DrawerContent({ navigation }: { navigation: any }) {
   const c = useTheme()
   const { t } = useTranslation()
+  const router = useRouter()
+
+  // 🟢 DATOS REALES DESDE EL STORE (Cargamos el profile del backend)
+  const profile = useAuthStore((state: any) => state.profile)
+  const clubName = useAuthStore((state: any) => state.activeClubName || 'Mi Club')
+  const activeRole = useAuthStore((state: any) => state.activeRole)
+  const logout = useAuthStore((state: any) => state.logout)
+
+  // Lógica de permisos basada en el rol activo
+  const esCoach = activeRole === 'COACH' || activeRole === 'PRESIDENT'
+  const esPresidente = activeRole === 'PRESIDENT'
 
   const ITEMS_COMUNES = [
     { ruta: 'inicio', icono: '🏠', label: t('nav.home') },
@@ -35,21 +34,29 @@ function DrawerContent({ navigation }: { navigation: any }) {
     ...(esPresidente ? [{ ruta: 'gestion-presidente', icono: '👑', label: t('nav.presidentManagement') }] : []),
   ]
 
+  const handleLogout = async () => {
+    await logout()
+    router.replace('/login')
+  }
+
   return (
     <View style={[styles.drawerContainer, { backgroundColor: c.fondo }]}>
 
-      {/* Header */}
+      {/* Header Dinámico con los datos del perfil guardado en el Store */}
       <View style={[styles.drawerHeader, { borderBottomColor: c.bordeInput }]}>
-        <View style={[styles.drawerAvatar, { backgroundColor: '#16a34a18', borderColor: '#16a34a35' }]}>
-          <Text style={[styles.drawerAvatarText, { color: '#16a34a' }]}>
-            {NOMBRE_USUARIO.charAt(0)}
+        <View style={[styles.drawerAvatar, { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` }]}>
+          <Text style={[styles.drawerAvatarText, { color: c.boton }]}>
+            {/* Usamos firstName con F mayúscula según tu interface UserProfile */}
+            {profile?.firstName?.charAt(0) || 'U'}
           </Text>
         </View>
         <View style={styles.drawerUserInfo}>
-          <Text style={[styles.drawerUserName, { color: c.texto }]}>{NOMBRE_USUARIO}</Text>
-          <Text style={[styles.drawerClubName, { color: c.subtexto }]}>{CLUB_NOMBRE}</Text>
-          <View style={[styles.rolBadge, { backgroundColor: '#16a34a18', borderColor: '#16a34a35' }]}>
-            <Text style={[styles.rolBadgeText, { color: '#16a34a' }]}>{ROL_USUARIO}</Text>
+          <Text style={[styles.drawerUserName, { color: c.texto }]}>
+            {profile?.firstName ? `${profile.firstName} ${profile.lastName || ''}` : 'Usuario'}
+          </Text>
+          <Text style={[styles.drawerClubName, { color: c.subtexto }]}>{clubName}</Text>
+          <View style={[styles.rolBadge, { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` }]}>
+            <Text style={[styles.rolBadgeText, { color: c.boton }]}>{activeRole || 'SIN ROL'}</Text>
           </View>
         </View>
       </View>
@@ -71,7 +78,7 @@ function DrawerContent({ navigation }: { navigation: any }) {
         ))}
       </View>
 
-      {/* Items por rol */}
+      {/* Items por rol (Gestión) */}
       {ITEMS_ROL.length > 0 && (
         <>
           <View style={[styles.drawerDivider, { borderTopColor: c.bordeInput }]}>
@@ -97,7 +104,10 @@ function DrawerContent({ navigation }: { navigation: any }) {
 
       {/* Footer */}
       <View style={styles.drawerFooter}>
-        <TouchableOpacity style={[styles.cerrarSesionBtn, { borderColor: '#ef444435', backgroundColor: '#ef444410' }]}>
+        <TouchableOpacity 
+            onPress={handleLogout}
+            style={[styles.cerrarSesionBtn, { borderColor: '#ef444435', backgroundColor: '#ef444410' }]}
+        >
           <Text style={styles.cerrarSesionText}>🚪 {t('nav.logout')}</Text>
         </TouchableOpacity>
         <Text style={[styles.drawerVersion, { color: c.subtexto }]}>Squadra v1.0</Text>
@@ -109,6 +119,11 @@ function DrawerContent({ navigation }: { navigation: any }) {
 
 export default function ClubLayout() {
   const c = useTheme()
+  
+  // Obtenemos el rol actual para configurar las pantallas del Drawer
+  const activeRole = useAuthStore((state: any) => state.activeRole)
+  const esPresidente = activeRole === 'PRESIDENT'
+  const esCoach = activeRole === 'COACH' || activeRole === 'PRESIDENT'
 
   return (
     <Drawer
@@ -137,6 +152,8 @@ export default function ClubLayout() {
       <Drawer.Screen name="horarios" />
       <Drawer.Screen name="tablon" />
       <Drawer.Screen name="mi-club" />
+      
+      {/* Estas pantallas se ocultan del menú si el usuario no tiene el rol adecuado */}
       <Drawer.Screen
         name="gestion-coach"
         options={{ drawerItemStyle: { display: esCoach ? 'flex' : 'none' } }}

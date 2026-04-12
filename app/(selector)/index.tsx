@@ -37,14 +37,32 @@ export default function SelectorIndex() {
   const [clubes, setClubes] = useState<ClubMembership[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const loadClubs = useCallback(async () => {
+const loadClubs = useCallback(async () => {
     setIsLoading(true);
     try {
       // 🟢 Llamada real al endpoint de producción
       const res = await apiFetch("/api/selector/mis-clubes");
+      
       if (res.ok) {
-        const data = await res.json();
-        setClubes(data);
+        // 1. Leemos la respuesta como texto plano primero
+        const textRes = await res.text();
+        
+        // 2. Si el texto está vacío (usuario nuevo sin clubes), lo atrapamos aquí
+        if (!textRes || textRes.trim() === "") {
+          console.log("Respuesta vacía del servidor. El usuario no tiene clubes.");
+          setClubes([]); // Seteamos el estado a vacío y no pasa nada
+          return;
+        }
+
+        // 3. Si hay texto, intentamos parsearlo a JSON
+        try {
+          const data = JSON.parse(textRes);
+          setClubes(data);
+        } catch (parseError) {
+          console.error("Error parseando el JSON de los clubes:", parseError);
+          setClubes([]);
+        }
+        
       } else {
         console.error("Fallo al cargar los clubes:", res.status);
       }
@@ -59,9 +77,9 @@ export default function SelectorIndex() {
     loadClubs();
   }, [loadClubs]);
 
-  const handleSelectClub = (club: ClubMembership) => {
-    // Aquí puedes ajustar según los parámetros que acepte tu zustand store
-    setActiveClub(club.clubId, club.role, club.teamId); 
+const handleSelectClub = (club: ClubMembership) => {
+    // 🟢 Ahora le pasamos el nombre del club para que el Layout lo vea
+    setActiveClub(club.clubId, club.clubName, club.role, club.teamId); 
     router.replace("/(club)/inicio");
   };
 

@@ -49,30 +49,43 @@ export default function CrearClub() {
   }
 
   const handleCrearClub = async () => {
-    if (!nombre.trim()) return
-    setIsSubmitting(true)
+    console.log("1. Botón pulsado. Nombre del club:", nombre);
+    if (!nombre.trim()) {
+      console.log("1.5. El nombre está vacío, cancelando.");
+      return;
+    }
+    
+    setIsSubmitting(true);
+    console.log("2. isSubmitting cambiado a true, preparando petición a /api/clubs");
 
     try {
       const res = await apiFetch("/api/clubs", {
         method: "POST",
         body: JSON.stringify({
           name: nombre,
-          logoUrl: null // Mandamos null hasta que implementemos subida a AWS/Firebase
+          logoUrl: null 
         })
-      })
+      });
+
+      console.log("3. Respuesta del servidor recibida. Status:", res.status);
 
       if (res.ok) {
-        const data = await res.json()
-        setClubData(data) // Guardamos ID y Código Real
-        setCreated(true)  // Cambiamos a pantalla de éxito
+        console.log("4. ¡Éxito! Status OK. Parseando JSON...");
+        const data = await res.json();
+        console.log("5. Datos recibidos:", data);
+        setClubData(data); 
+        setCreated(true);  
       } else {
-        Alert.alert("Error", "No se pudo crear el club. Inténtalo de nuevo.")
+        const errorText = await res.text();
+        console.log("4. ERROR DEL SERVIDOR:", res.status, errorText);
+        Alert.alert("Error del servidor", `Código ${res.status}: ${errorText}`);
       }
     } catch (e) {
-      console.error(e)
-      Alert.alert("Error", "Fallo de conexión.")
+      console.error("❌ ERROR CATASTRÓFICO EN EL FRONTEND:", e);
+      Alert.alert("Error", "Fallo de conexión o error en el código de la app.");
     } finally {
-      setIsSubmitting(false)
+      setIsSubmitting(false);
+      console.log("6. isSubmitting devuelto a false.");
     }
   }
 
