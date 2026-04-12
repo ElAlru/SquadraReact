@@ -20,10 +20,12 @@ interface AuthState {
   isInitialized: boolean;
   activeRole: "PRESIDENT" | "COACH" | "PLAYER" | "RELATIVE" | "OTHER" | null;
   activeClubId: number | null;
+  activeTeamId: number | null; // 👈 NUEVO: Guardamos el ID del equipo
 
   setAuth: (user: User | null, session: Session | null) => void;
   setProfile: (profile: UserProfile) => void;
-  setActiveClub: (clubId: number, role: AuthState["activeRole"]) => void;
+  // 👈 MODIFICADO: Añadimos teamId como tercer parámetro opcional
+  setActiveClub: (clubId: number, role: AuthState["activeRole"], teamId?: number | null) => void;
   clearAuth: () => void;
 }
 
@@ -34,11 +36,16 @@ export const useAuthStore = create<AuthState>((set) => ({
   isInitialized: false,
   activeRole: null,
   activeClubId: null,
+  activeTeamId: null, // 👈 NUEVO: Estado inicial
 
   setAuth: (user, session) => set({ user, session, isInitialized: true }),
+  
   setProfile: (profile) => set({ profile }),
-  setActiveClub: (clubId, role) =>
-    set({ activeClubId: clubId, activeRole: role }),
+  
+  // 👈 MODIFICADO: Recibe el teamId (por defecto null) y lo guarda en el estado
+  setActiveClub: (clubId, role, teamId = null) =>
+    set({ activeClubId: clubId, activeRole: role, activeTeamId: teamId }),
+    
   clearAuth: () =>
     set({
       user: null,
@@ -47,5 +54,6 @@ export const useAuthStore = create<AuthState>((set) => ({
       isInitialized: true,
       activeRole: null,
       activeClubId: null,
+      activeTeamId: null, // 👈 NUEVO: Lo limpiamos al cerrar sesión
     }),
 }));

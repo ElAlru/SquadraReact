@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
@@ -13,105 +13,93 @@ import { apiFetch } from "../../lib/api";
 import { useAuthStore } from "../../lib/store";
 import { useTheme } from "../../lib/useTheme";
 
-const ROL_LABEL = {
+const ROL_LABEL: Record<string, string> = {
   PRESIDENT: "👑 Presidente",
   COACH: "🎽 Entrenador",
   PLAYER: "⚽ Jugador",
   RELATIVE: "👨‍👧 Familiar",
   OTHER: "👤 Otro",
-} as const;
-
-export type ClubRole = keyof typeof ROL_LABEL;
+};
 
 type ClubMembership = {
-  id: number;
-  nombre: string;
-  rol: ClubRole;
+  clubId: number;
+  clubName: string;
+  role: "PRESIDENT" | "COACH" | "PLAYER" | "RELATIVE" | "OTHER"; // 👈 Ahora TypeScript sabe que es 100% seguro
+  teamId: number | null;
+  teamName: string | null;
 };
 
 export default function SelectorIndex() {
   const c = useTheme();
   const { t } = useTranslation();
-  const { setActiveClub } = useAuthStore();
+  const { setActiveClub } = useAuthStore(); // Asume que tu store guarda el estado activo
 
   const [clubes, setClubes] = useState<ClubMembership[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    loadClubs();
-  }, []);
-
-  const loadClubs = async () => {
+  const loadClubs = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await apiFetch("/user-roles/mis-clubes");
-      console.log("STATUS:", res.status);
-      console.log("OK:", res.ok);
-      const text = await res.text();
-      console.log("BODY:", text);
+      // 🟢 Llamada real al endpoint de producción
+      const res = await apiFetch("/api/selector/mis-clubes");
+      if (res.ok) {
+        const data = await res.json();
+        setClubes(data);
+      } else {
+        console.error("Fallo al cargar los clubes:", res.status);
+      }
     } catch (e) {
-      console.error("Error cargando clubes:", e);
+      console.error("Error de red cargando clubes:", e);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadClubs();
+  }, [loadClubs]);
 
   const handleSelectClub = (club: ClubMembership) => {
-    setActiveClub(club.id, club.rol);
+    // Aquí puedes ajustar según los parámetros que acepte tu zustand store
+    setActiveClub(club.clubId, club.role, club.teamId); 
     router.replace("/(club)/inicio");
   };
 
   return (
-    <ScrollView
-      contentContainerStyle={[styles.container, { backgroundColor: c.fondo }]}
-      keyboardShouldPersistTaps="handled"
-    >
+    <ScrollView contentContainerStyle={[styles.container, { backgroundColor: c.fondo }]} keyboardShouldPersistTaps="handled">
       {/* Brand */}
       <Text style={styles.brand}>SQUADRA</Text>
 
-      {/* Cabecera */}
+      {/* Cabecera dinámica (Estado 1 vs Estados 2, 3, 4) */}
       <Text style={[styles.title, { color: c.texto }]}>
-        {clubes.length > 0 ? t("selector.title") : t("selector.titleEmpty")}
+        {!isLoading && clubes.length > 0 ? "Tus clubes" : "¿Listo para jugar?"}
       </Text>
       <Text style={[styles.subtitle, { color: c.subtexto }]}>
-        {clubes.length > 0
-          ? t("selector.subtitle")
-          : t("selector.subtitleEmpty")}
+        {!isLoading && clubes.length > 0
+          ? "Selecciona un club para continuar"
+          : "Crea tu club o únete al de tu equipo"}
       </Text>
 
       {/* Lista de clubes */}
       {isLoading ? (
-        <ActivityIndicator color={c.boton} style={{ marginVertical: 32 }} />
+        <ActivityIndicator color={c.boton} size="large" style={{ marginVertical: 32 }} />
       ) : clubes.length > 0 ? (
         <View style={styles.clubList}>
-          {clubes.map((club) => (
+          {clubes.map((club, index) => (
             <TouchableOpacity
-              key={club.id}
-              style={[
-                styles.clubCard,
-                { backgroundColor: c.input, borderColor: c.bordeInput },
-              ]}
+              key={`${club.clubId}-${club.teamId || 'null'}-${index}`}
+              style={[styles.clubCard, { backgroundColor: c.input, borderColor: c.bordeInput }]}
               onPress={() => handleSelectClub(club)}
             >
-              <View
-                style={[
-                  styles.clubAvatar,
-                  {
-                    backgroundColor: `${c.boton}18`,
-                    borderColor: `${c.boton}35`,
-                  },
-                ]}
-              >
-                <Text style={[styles.clubAvatarText, { color: c.boton }]}>
-                  {club.nombre.charAt(0)}
-                </Text>
+              <View style={[styles.clubAvatar, { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` }]}>
+                <Text style={[styles.clubAvatarText, { color: c.boton }]}>{club.clubName.charAt(0)}</Text>
               </View>
               <View style={styles.clubInfo}>
-                <Text style={[styles.clubName, { color: c.texto }]}>
-                  {club.nombre}
-                </Text>
+                <Text style={[styles.clubName, { color: c.texto }]}>{club.clubName}</Text>
+                {/* Lógica para Estado 3: Mostrar rol y el equipo si lo tiene */}
                 <Text style={[styles.clubRol, { color: c.subtexto }]}>
-                  {ROL_LABEL[club.rol]}
+                  {ROL_LABEL[club.role] || ROL_LABEL["OTHER"]}
+                  {club.teamName ? ` (${club.teamName})` : ''}
                 </Text>
               </View>
               <Text style={[styles.clubArrow, { color: c.boton }]}>›</Text>
@@ -120,57 +108,35 @@ export default function SelectorIndex() {
         </View>
       ) : null}
 
-      {/* Divisor — solo si hay clubes */}
+      {/* Divisor "o" */}
       {!isLoading && clubes.length > 0 && (
         <View style={styles.dividerContainer}>
-          <View
-            style={[styles.dividerLine, { backgroundColor: c.bordeInput }]}
-          />
-          <Text style={[styles.dividerText, { color: c.subtexto }]}>
-            {t("selector.or")}
-          </Text>
-          <View
-            style={[styles.dividerLine, { backgroundColor: c.bordeInput }]}
-          />
+          <View style={[styles.dividerLine, { backgroundColor: c.bordeInput }]} />
+          <Text style={[styles.dividerText, { color: c.subtexto }]}>o</Text>
+          <View style={[styles.dividerLine, { backgroundColor: c.bordeInput }]} />
         </View>
       )}
 
-      {/* Acciones — siempre visibles */}
+      {/* Acciones principales / secundarias */}
       {!isLoading && (
         <View style={styles.actions}>
-          <TouchableOpacity
-            style={[styles.actionCard, { backgroundColor: c.boton }]}
-            onPress={() => router.push("/(selector)/crear-club")}
-          >
+          <TouchableOpacity style={[styles.actionCard, { backgroundColor: c.boton }]} onPress={() => router.push("/(selector)/crear-club")}>
             <Text style={styles.actionIcon}>🏆</Text>
             <View style={styles.actionText}>
-              <Text style={styles.actionTitle}>{t("selector.createClub")}</Text>
-              <Text style={styles.actionSubtitle}>
-                {t("selector.createClubSub")}
-              </Text>
+              <Text style={styles.actionTitle}>{clubes.length > 0 ? "Crear otro club" : "Crear mi club"}</Text>
+              {clubes.length === 0 && <Text style={styles.actionSubtitle}>Soy el presidente del club</Text>}
             </View>
             <Text style={styles.actionArrow}>›</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[
-              styles.actionCard,
-              {
-                backgroundColor: c.input,
-                borderWidth: 1.5,
-                borderColor: c.bordeInput,
-              },
-            ]}
+            style={[styles.actionCard, { backgroundColor: c.input, borderWidth: 1.5, borderColor: c.bordeInput }]}
             onPress={() => router.push("/(selector)/unirse")}
           >
             <Text style={styles.actionIcon}>🔗</Text>
             <View style={styles.actionText}>
-              <Text style={[styles.actionTitle, { color: c.texto }]}>
-                {t("selector.joinClub")}
-              </Text>
-              <Text style={[styles.actionSubtitle, { color: c.subtexto }]}>
-                {t("selector.joinClubSub")}
-              </Text>
+              <Text style={[styles.actionTitle, { color: c.texto }]}>{clubes.length > 0 ? "Unirme a otro club" : "Unirme a un club"}</Text>
+              {clubes.length === 0 && <Text style={[styles.actionSubtitle, { color: c.subtexto }]}>Tengo un código de invitación</Text>}
             </View>
             <Text style={[styles.actionArrow, { color: c.subtexto }]}>›</Text>
           </TouchableOpacity>
@@ -181,111 +147,26 @@ export default function SelectorIndex() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    padding: 24,
-    paddingTop: 80,
-    paddingBottom: 40,
-  },
-  brand: {
-    fontSize: 13,
-    fontWeight: "bold",
-    color: "#C9A84C",
-    letterSpacing: 4,
-    marginBottom: 32,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "bold",
-    marginBottom: 6,
-  },
-  subtitle: {
-    fontSize: 14,
-    marginBottom: 28,
-    lineHeight: 20,
-  },
-  clubList: {
-    gap: 12,
-    marginBottom: 8,
-  },
-  clubCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 14,
-    gap: 14,
-  },
-  clubAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  clubAvatarText: {
-    fontSize: 20,
-    fontWeight: "bold",
-  },
-  clubInfo: {
-    flex: 1,
-    gap: 3,
-  },
-  clubName: {
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  clubRol: {
-    fontSize: 13,
-  },
-  clubArrow: {
-    fontSize: 24,
-    fontWeight: "bold",
-  },
-  dividerContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginVertical: 24,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-  },
-  dividerText: {
-    fontSize: 13,
-  },
-  actions: {
-    gap: 14,
-  },
-  actionCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderRadius: 16,
-    padding: 20,
-    gap: 16,
-  },
-  actionIcon: {
-    fontSize: 32,
-  },
-  actionText: {
-    flex: 1,
-    gap: 4,
-  },
-  actionTitle: {
-    fontSize: 17,
-    fontWeight: "bold",
-    color: "#ffffff",
-  },
-  actionSubtitle: {
-    fontSize: 13,
-    color: "rgba(255,255,255,0.75)",
-    lineHeight: 18,
-  },
-  actionArrow: {
-    fontSize: 26,
-    fontWeight: "bold",
-    color: "rgba(255,255,255,0.8)",
-  },
+  container: { flexGrow: 1, padding: 24, paddingTop: 80, paddingBottom: 40 },
+  brand: { fontSize: 13, fontWeight: "bold", color: "#C9A84C", letterSpacing: 4, marginBottom: 32 },
+  title: { fontSize: 28, fontWeight: "bold", marginBottom: 6 },
+  subtitle: { fontSize: 14, marginBottom: 28, lineHeight: 20 },
+  clubList: { gap: 12, marginBottom: 8 },
+  clubCard: { flexDirection: "row", alignItems: "center", borderRadius: 14, borderWidth: 1, padding: 14, gap: 14 },
+  clubAvatar: { width: 48, height: 48, borderRadius: 14, borderWidth: 1.5, alignItems: "center", justifyContent: "center" },
+  clubAvatarText: { fontSize: 20, fontWeight: "bold" },
+  clubInfo: { flex: 1, gap: 3 },
+  clubName: { fontSize: 16, fontWeight: "600" },
+  clubRol: { fontSize: 13, fontWeight: "500" },
+  clubArrow: { fontSize: 24, fontWeight: "bold" },
+  dividerContainer: { flexDirection: "row", alignItems: "center", gap: 10, marginVertical: 24 },
+  dividerLine: { flex: 1, height: 1 },
+  dividerText: { fontSize: 13, fontWeight: "bold" },
+  actions: { gap: 14 },
+  actionCard: { flexDirection: "row", alignItems: "center", borderRadius: 16, padding: 20, gap: 16 },
+  actionIcon: { fontSize: 32 },
+  actionText: { flex: 1, gap: 4 },
+  actionTitle: { fontSize: 17, fontWeight: "bold", color: "#ffffff" },
+  actionSubtitle: { fontSize: 13, color: "rgba(255,255,255,0.75)", lineHeight: 18 },
+  actionArrow: { fontSize: 26, fontWeight: "bold", color: "rgba(255,255,255,0.8)" },
 });
