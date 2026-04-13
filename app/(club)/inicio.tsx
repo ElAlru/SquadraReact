@@ -12,8 +12,8 @@ export default function Inicio() {
   const router = useRouter()
 
   // --- 1. DATOS DEL STORE ---
-  // 🟢 CORREGIDO: Usamos 'profile' que es donde guardamos los datos de nuestro backend
   const profile = useAuthStore((state: any) => state.profile)
+  const clubId = useAuthStore((state: any) => state.activeClubId)
   const clubName = useAuthStore((state: any) => state.activeClubName || 'Mi Club')
   const clubLogo = useAuthStore((state: any) => state.activeClubLogo)
   const teamName = useAuthStore((state: any) => state.activeTeamName)
@@ -26,6 +26,7 @@ export default function Inicio() {
   const [ultimoAnuncio, setUltimoAnuncio] = useState<any>(null)
   const [proximosEventos, setProximosEventos] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [hayEquipos, setHayEquipos] = useState(false)
 
   // --- 3. LÓGICA DE SALUDO ---
   useEffect(() => {
@@ -37,30 +38,71 @@ export default function Inicio() {
 
   // --- 4. PETICIONES A LA API ---
   const fetchDashboardData = useCallback(async () => {
-    if (!activeTeamId) {
-      setLoading(false)
-      return
-    }
-
     setLoading(true)
     try {
-      const resAnuncio = await apiFetch(`/api/tablon/ultimo?teamId=${activeTeamId}`)
-      if (resAnuncio.ok) {
-        const dataAnuncio = resAnuncio.status === 204 ? null : await resAnuncio.json()
-        setUltimoAnuncio(dataAnuncio)
+      let isPresidentWithTeams = false;
+
+      // 🟢 1. Si es presidente, miramos si hay equipos
+      if (activeRole === 'PRESIDENT' && clubId) {
+        const resEquipos = await apiFetch(`/api/president/club/${clubId}/teams`)
+        if (resEquipos.ok) {
+          const dataEquipos = await resEquipos.json()
+          isPresidentWithTeams = dataEquipos.length > 0;
+          setHayEquipos(isPresidentWithTeams)
+        }
       }
 
-      const resEventos = await apiFetch(`/api/eventos/proximos?teamId=${activeTeamId}&limit=3`)
+      // 🟢 2. CONDICIÓN DE PARADA CORRECTA:
+      // Paramos si NO es presi y NO tiene equipo. O si ES presi pero el club está vacío.
+      if ((activeRole !== 'PRESIDENT' && !activeTeamId) || (activeRole === 'PRESIDENT' && !isPresidentWithTeams)) {
+        setLoading(false)
+        return
+      }
+
+      // 🟢 3. CARGAR ANUNCIOS (Global para presi, Específico para jugadores)
+      const urlAnuncio = activeRole === 'PRESIDENT' 
+          ? `/api/president/club/${clubId}/announcements` 
+          : `/api/tablon/ultimo?teamId=${activeTeamId}`;
+
+      const resAnuncio = await apiFetch(urlAnuncio)
+      if (resAnuncio.ok && resAnuncio.status !== 204) {
+        const dataAnuncio = await resAnuncio.json()
+        
+        if (activeRole === 'PRESIDENT') {
+          // El presi recibe un array (AnuncioCompletoDTO). Cogemos el primero.
+          if (dataAnuncio && dataAnuncio.length > 0) {
+            setUltimoAnuncio({
+              titulo: dataAnuncio[0].titulo,
+              contenido: dataAnuncio[0].contenido,
+              autor: dataAnuncio[0].autor,
+              fecha: dataAnuncio[0].fecha
+            })
+          } else {
+            setUltimoAnuncio(null)
+          }
+        } else {
+          // El jugador recibe el objeto directo
+          setUltimoAnuncio(dataAnuncio)
+        }
+      }
+
+      // 🟢 4. CARGAR EVENTOS
+      const urlEventos = activeRole === 'PRESIDENT'
+          ? `/api/eventos/proximos?clubId=${clubId}&limit=3` // Asume que tu backend soporta buscar por clubId
+          : `/api/eventos/proximos?teamId=${activeTeamId}&limit=3`;
+
+      const resEventos = await apiFetch(urlEventos)
       if (resEventos.ok) {
         const dataEventos = await resEventos.json()
         setProximosEventos(dataEventos)
       }
+
     } catch (error) {
       console.error("Fallo al cargar dashboard:", error)
     } finally {
       setLoading(false)
     }
-  }, [activeTeamId])
+  }, [activeTeamId, activeRole, clubId])
 
   useEffect(() => {
     fetchDashboardData()
@@ -74,7 +116,6 @@ export default function Inicio() {
         <View style={styles.headerRow}>
           <View style={{ flex: 1 }}>
             <Text style={[styles.saludo, { color: c.subtexto }]}>{saludo},</Text>
-            {/* 🟢 CORREGIDO: Usamos profile?.firstName para que salga tu nombre real */}
             <Text style={[styles.userName, { color: c.texto }]}>
               {profile?.firstName || 'Presidente'} 👋
             </Text>
@@ -90,38 +131,52 @@ export default function Inicio() {
 
         <Text style={[styles.clubName, { color: c.texto }]}>{clubName}</Text>
 
-        {/* CHIPS DE INFORMACIÓN */}
-        {activeTeamId && (
+        {/* CHIPS DE INFORMACIÓN (Solo se muestran si tienes equipo o temporada activa) */}
+        {(activeTeamId || activeRole === 'PRESIDENT') && (
             <View style={styles.chipsRow}>
                 <View style={[styles.chip, { backgroundColor: `${c.boton}20` }]}>
                     <Text style={[styles.chipText, { color: c.boton }]}>📅 {seasonName}</Text>
                 </View>
-                <View style={[styles.chip, { backgroundColor: `${c.boton}20` }]}>
-                    <Text style={[styles.chipText, { color: c.boton }]}>👕 {teamName || 'Equipo'}</Text>
-                </View>
+                {activeTeamId && (
+                  <View style={[styles.chip, { backgroundColor: `${c.boton}20` }]}>
+                      <Text style={[styles.chipText, { color: c.boton }]}>👕 {teamName || 'Equipo'}</Text>
+                  </View>
+                )}
+                {activeRole === 'PRESIDENT' && !activeTeamId && (
+                  <View style={[styles.chip, { backgroundColor: `${c.boton}20` }]}>
+                      <Text style={[styles.chipText, { color: c.boton }]}>👑 Modo Presidencia</Text>
+                  </View>
+                )}
             </View>
         )}
 
+        {/* --- RENDERIZADO CONDICIONAL --- */}
         {loading ? (
           <ActivityIndicator size="large" color={c.boton} style={{ marginTop: 40 }} />
-        ) : !activeTeamId ? (
+        ) : (activeRole === 'PRESIDENT' && !hayEquipos) || (activeRole !== 'PRESIDENT' && !activeTeamId) ? (
+          
+          /* 🛑 PANTALLA VACÍA (Para club nuevo o jugador sin equipo) */
           <View style={[styles.noTeamCard, { backgroundColor: c.input }]}>
             <Text style={[styles.noTeamTitle, { color: c.texto }]}>¡Bienvenido a tu club!</Text>
             <Text style={[styles.noTeamSub, { color: c.subtexto }]}>
-              {activeRole === 'PRESIDENT' 
+              {activeRole === 'PRESIDENT'
                 ? 'Como presidente, el siguiente paso es crear tu primer equipo desde el menú de gestión.' 
-                : 'Aún no tienes un equipo asignado en este club.'}
+                : 'Aún no tienes un equipo asignado para ver el tablón y los eventos.'}
             </Text>
+            
             {activeRole === 'PRESIDENT' && (
                 <TouchableOpacity 
                     style={[styles.btnCrearEquipo, { backgroundColor: c.boton }]}
-                    onPress={() => router.push('/gestion-presidente')}
+                    onPress={() => router.push('/(club)/gestion')}
                 >
                     <Text style={styles.btnCrearEquipoText}>Ir a Gestión</Text>
                 </TouchableOpacity>
             )}
           </View>
+
         ) : (
+          
+          /* ✅ DASHBOARD (Anuncios y Eventos) */
           <>
             <View style={styles.sectionHeader}>
               <Text style={[styles.sectionTitle, { color: c.texto }]}>Último Anuncio</Text>
@@ -146,7 +201,7 @@ export default function Inicio() {
               </TouchableOpacity>
             ) : (
               <View style={[styles.card, { backgroundColor: c.input, opacity: 0.7, borderStyle: 'dashed' }]}>
-                <Text style={{ color: c.subtexto, textAlign: 'center' }}>No hay anuncios para tu equipo aún.</Text>
+                <Text style={{ color: c.subtexto, textAlign: 'center' }}>No hay anuncios para mostrar aún.</Text>
               </View>
             )}
 

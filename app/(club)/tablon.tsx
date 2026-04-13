@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { 
   StyleSheet, Text, View, ScrollView, TouchableOpacity, 
-  ActivityIndicator, LayoutAnimation, Platform, UIManager, RefreshControl 
+  ActivityIndicator, LayoutAnimation, Platform, UIManager, RefreshControl,
+  Alert // 🟢 Importante para confirmar el borrado
 } from 'react-native'
 import { useTheme } from '../../lib/useTheme'
 import { useAuthStore } from '../../lib/store'
@@ -16,7 +17,9 @@ export default function Tablon() {
   const c = useTheme()
   
   // --- DATA DEL STORE ---
+  const clubId = useAuthStore((state: any) => state.activeClubId) // 🟢 Necesario para el Presi
   const activeTeamId = useAuthStore((state: any) => state.activeTeamId)
+  const activeRole = useAuthStore((state: any) => state.activeRole) // 🟢 Para saber si es Presi
   const userId = useAuthStore((state: any) => state.user?.id)
   
   // --- ESTADOS ---
@@ -28,13 +31,21 @@ export default function Tablon() {
 
   // --- CARGA DE DATOS ---
   const fetchAnuncios = useCallback(async () => {
-    if (!activeTeamId || !userId) return
+    // 🟢 Si es jugador/coach sin equipo, no carga. Si es presi, carga siempre con su club.
+    if ((activeRole !== 'PRESIDENT' && !activeTeamId) || !userId || !clubId) return
+
     try {
-      // Endpoint que creamos en el TablonController
-      const res = await apiFetch(`/api/tablon/todos?teamId=${activeTeamId}&userId=${userId}`)
+      // 🟢 Enrutamiento inteligente según el rol
+      const url = activeRole === 'PRESIDENT'
+        ? `/api/president/club/${clubId}/announcements`
+        : `/api/tablon/todos?teamId=${activeTeamId}&userId=${userId}`
+
+      const res = await apiFetch(url)
+      
       if (res.ok) {
-        const data = await res.json()
-        setAnuncios(data)
+        // Asegurar que si viene vacío 204 no pete
+        const data = res.status === 204 ? [] : await res.json()
+        setAnuncios(Array.isArray(data) ? data : [])
       }
     } catch (e) {
       console.error("Error al cargar el tablón:", e)
@@ -42,35 +53,77 @@ export default function Tablon() {
       setLoading(false)
       setRefreshing(false)
     }
-  }, [activeTeamId, userId])
+  }, [activeTeamId, userId, clubId, activeRole])
 
   useEffect(() => {
     fetchAnuncios()
   }, [fetchAnuncios])
 
+  // --- LÓGICA DE BORRADO (Solo Presidente) ---
+// --- LÓGICA DE BORRADO (Compatible Web/Móvil) ---
+  const ejecutarBorrado = async (id: number) => {
+    console.log(`🔥 Intentando borrar anuncio con ID: ${id}...`);
+    try {
+      // Ajusta esta ruta si tu endpoint de Java es diferente
+      const res = await apiFetch(`/api/president/announcements/${id}`, { method: 'DELETE' });
+      
+      if (res.ok) {
+        console.log("✅ Borrado exitoso en BD. Actualizando pantalla...");
+        setAnuncios(prev => prev.filter(a => a.id !== id));
+      } else {
+        const errorText = await res.text();
+        console.error("❌ El servidor rechazó el borrado:", res.status, errorText);
+        Alert.alert("Error del servidor", "No se pudo eliminar el anuncio en la base de datos.");
+      }
+    } catch (e) {
+      console.error("💥 Error de conexión:", e);
+      Alert.alert("Error de red", "Fallo de conexión al eliminar.");
+    }
+  };
+
+  const handleEliminarAnuncio = (id: number) => {
+    if (Platform.OS === 'web') {
+      // 🌐 Pop-up especial para navegador Web
+      const confirmado = window.confirm("¿Estás seguro de que quieres borrar este anuncio permanentemente?");
+      if (confirmado) {
+        ejecutarBorrado(id);
+      }
+    } else {
+      // 📱 Pop-up nativo para iOS/Android
+      Alert.alert(
+        "Eliminar Anuncio",
+        "¿Estás seguro de que quieres borrar este anuncio permanentemente?",
+        [
+          { text: "Cancelar", style: "cancel" },
+          { text: "Eliminar", style: "destructive", onPress: () => ejecutarBorrado(id) }
+        ]
+      );
+    }
+  };
+
   // --- LÓGICA DE LECTURA Y EXPANSIÓN ---
   const handlePressAnuncio = async (anuncio: any) => {
-    // Configurar animación suave para el despliegue
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut)
     
     const isOpening = expandedId !== anuncio.id
     setExpandedId(isOpening ? anuncio.id : null)
 
-    // Si lo está abriendo y no estaba leído, lanzamos el proceso de lectura
-    if (isOpening && !anuncio.isRead) {
-      // 1. Actualización inmediata en la UI (Optimistic Update)
+    // 🟢 Mapeamos los campos del DTO (puede venir como isRead o read según el endpoint)
+    const isLeido = anuncio.isRead !== undefined ? anuncio.isRead : anuncio.read;
+
+    if (isOpening && !isLeido) {
+      // 1. Optimistic Update
       setAnuncios(prev => prev.map(a => 
-        a.id === anuncio.id ? { ...a, isRead: true } : a
+        a.id === anuncio.id ? { ...a, isRead: true, read: true } : a
       ))
 
       try {
-        // 2. Notificamos al Backend
-        await apiFetch(`/api/tablon/leer/${anuncio.id}?userId=${userId}`, {
-          method: 'POST'
-        })
+        // 2. Notificar lectura (solo si tienes endpoint de lectura implementado)
+        if (activeRole !== 'PRESIDENT') {
+          await apiFetch(`/api/tablon/leer/${anuncio.id}?userId=${userId}`, { method: 'POST' })
+        }
       } catch (e) {
         console.error("No se pudo sincronizar la lectura con el servidor", e)
-        // Opcional: Si falla mucho, podrías revertir el estado aquí
       }
     }
   }
@@ -78,9 +131,12 @@ export default function Tablon() {
   // --- FILTRADO EN MEMORIA ---
   const anunciosFiltrados = useMemo(() => {
     return anuncios.filter(a => {
+      // 🟢 Mapeamos isClub/club (por si el backend manda 'club' en vez de 'isClub')
+      const isAnuncioClub = a.isClub !== undefined ? a.isClub : a.club;
+
       if (filtro === 'TODOS') return true
-      if (filtro === 'CLUB') return a.isClub
-      if (filtro === 'EQUIPO') return !a.isClub
+      if (filtro === 'CLUB') return isAnuncioClub
+      if (filtro === 'EQUIPO') return !isAnuncioClub
       return true
     })
   }, [anuncios, filtro])
@@ -101,7 +157,10 @@ export default function Tablon() {
         {(['TODOS', 'CLUB', 'EQUIPO'] as const).map((f) => (
           <TouchableOpacity 
             key={f} 
-            onPress={() => setFiltro(f)}
+            onPress={() => {
+              setFiltro(f)
+              setExpandedId(null) // Cerrar tarjetas al cambiar filtro
+            }}
             style={[
               styles.filterBtn, 
               { backgroundColor: filtro === f ? c.boton : c.input }
@@ -125,72 +184,90 @@ export default function Tablon() {
         }
       >
         {anunciosFiltrados.length > 0 ? (
-          anunciosFiltrados.map((a) => (
-            <TouchableOpacity 
-              key={a.id} 
-              activeOpacity={0.8}
-              onPress={() => handlePressAnuncio(a)}
-              style={[
-                styles.card, 
-                { 
-                  backgroundColor: c.input, 
-                  borderColor: a.isPinned ? c.boton : 'transparent',
-                  borderWidth: a.isPinned ? 1.5 : 0 
-                }
-              ]}
-            >
-              {/* CABECERA: Badges y Punto de lectura */}
-              <View style={styles.cardHeader}>
-                <View style={styles.badgeRow}>
-                  {a.isPinned && (
-                    <View style={[styles.pinnedBadge, { backgroundColor: `${c.boton}20` }]}>
-                      <Text style={[styles.pinnedText, { color: c.boton }]}>📌 FIJADO</Text>
-                    </View>
-                  )}
-                  <View style={[
-                    styles.typeBadge, 
-                    { backgroundColor: a.isClub ? '#6366f120' : '#10b98120' }
-                  ]}>
-                    <Text style={[
-                      styles.typeText, 
-                      { color: a.isClub ? '#6366f1' : '#10b981' }
-                    ]}>
-                      {a.isClub ? 'CLUB' : 'EQUIPO'}
-                    </Text>
-                  </View>
-                </View>
+          anunciosFiltrados.map((a) => {
+            // Adaptación de los nombres del DTO de Java
+            const isPinned = a.isPinned !== undefined ? a.isPinned : a.pinned;
+            const isClub = a.isClub !== undefined ? a.isClub : a.club;
+            const isRead = a.isRead !== undefined ? a.isRead : a.read;
 
-                {!a.isRead && (
-                  <View style={[styles.unreadDot, { backgroundColor: c.boton }]} />
-                )}
-              </View>
-
-              {/* TÍTULO */}
-              <Text style={[styles.title, { color: c.texto }]}>{a.titulo}</Text>
-
-              {/* CONTENIDO (Expandible) */}
-              <Text 
-                style={[styles.content, { color: c.subtexto }]} 
-                numberOfLines={expandedId === a.id ? undefined : 3}
+            return (
+              <TouchableOpacity 
+                key={a.id} 
+                activeOpacity={0.8}
+                onPress={() => handlePressAnuncio(a)}
+                style={[
+                  styles.card, 
+                  { 
+                    backgroundColor: c.input, 
+                    borderColor: isPinned ? c.boton : 'transparent',
+                    borderWidth: isPinned ? 1.5 : 0 
+                  }
+                ]}
               >
-                {a.contenido}
-              </Text>
-
-              {/* PIE DE TARJETA (Solo visible si está expandido) */}
-              {expandedId === a.id && (
-                <View style={[styles.expandedFooter, { borderTopColor: `${c.subtexto}20` }]}>
-                  <View style={styles.footerItem}>
-                    <Text style={[styles.footerLabel, { color: c.subtexto }]}>Autor:</Text>
-                    <Text style={[styles.footerValue, { color: c.texto }]}>{a.autor}</Text>
+                {/* CABECERA: Badges y Punto de lectura */}
+                <View style={styles.cardHeader}>
+                  <View style={styles.badgeRow}>
+                    {isPinned && (
+                      <View style={[styles.pinnedBadge, { backgroundColor: `${c.boton}20` }]}>
+                        <Text style={[styles.pinnedText, { color: c.boton }]}>📌 FIJADO</Text>
+                      </View>
+                    )}
+                    <View style={[
+                      styles.typeBadge, 
+                      { backgroundColor: isClub ? '#6366f120' : '#10b98120' }
+                    ]}>
+                      <Text style={[
+                        styles.typeText, 
+                        { color: isClub ? '#6366f1' : '#10b981' }
+                      ]}>
+                        {isClub ? 'CLUB' : 'EQUIPO'}
+                      </Text>
+                    </View>
                   </View>
-                  <View style={styles.footerItem}>
-                    <Text style={[styles.footerLabel, { color: c.subtexto }]}>Fecha:</Text>
-                    <Text style={[styles.footerValue, { color: c.texto }]}>{a.fecha}</Text>
+
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    {!isRead && (
+                      <View style={[styles.unreadDot, { backgroundColor: c.boton }]} />
+                    )}
+                    {/* 🟢 BOTÓN ELIMINAR SOLO PARA PRESIDENTE */}
+                    {activeRole === 'PRESIDENT' && (
+                      <TouchableOpacity 
+                        onPress={() => handleEliminarAnuncio(a.id)}
+                        style={[styles.deleteBtn, { backgroundColor: '#ef444420' }]}
+                      >
+                        <Text style={{ fontSize: 12 }}>🗑️</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </View>
-              )}
-            </TouchableOpacity>
-          ))
+
+                {/* TÍTULO */}
+                <Text style={[styles.title, { color: c.texto }]}>{a.titulo || a.title}</Text>
+
+                {/* CONTENIDO (Expandible) */}
+                <Text 
+                  style={[styles.content, { color: c.subtexto }]} 
+                  numberOfLines={expandedId === a.id ? undefined : 3}
+                >
+                  {a.contenido || a.content}
+                </Text>
+
+                {/* PIE DE TARJETA (Solo visible si está expandido) */}
+                {expandedId === a.id && (
+                  <View style={[styles.expandedFooter, { borderTopColor: `${c.subtexto}20` }]}>
+                    <View style={styles.footerItem}>
+                      <Text style={[styles.footerLabel, { color: c.subtexto }]}>Autor:</Text>
+                      <Text style={[styles.footerValue, { color: c.texto }]}>{a.autor || a.authorName}</Text>
+                    </View>
+                    <View style={styles.footerItem}>
+                      <Text style={[styles.footerLabel, { color: c.subtexto }]}>Fecha:</Text>
+                      <Text style={[styles.footerValue, { color: c.texto }]}>{a.fecha || a.publishedAt}</Text>
+                    </View>
+                  </View>
+                )}
+              </TouchableOpacity>
+            )
+          })
         ) : (
           <View style={styles.emptyState}>
             <Text style={{ fontSize: 40, marginBottom: 10 }}>📢</Text>
@@ -222,7 +299,6 @@ const styles = StyleSheet.create({
     padding: 18, 
     borderRadius: 20, 
     marginBottom: 16, 
-    // Sombras ligeras para elevación
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
@@ -244,6 +320,7 @@ const styles = StyleSheet.create({
   typeText: { fontSize: 10, fontWeight: 'bold' },
   
   unreadDot: { width: 10, height: 10, borderRadius: 5 },
+  deleteBtn: { padding: 6, borderRadius: 8 },
   
   title: { fontSize: 18, fontWeight: 'bold', marginBottom: 8 },
   content: { fontSize: 15, lineHeight: 22 },
@@ -260,5 +337,5 @@ const styles = StyleSheet.create({
   footerValue: { fontSize: 13, fontWeight: '600' },
 
   emptyState: { alignItems: 'center', marginTop: 100 },
-  emptyText: { fontSize: 16, fontWeight: '500' }
+  emptyText: { fontSize: 16, fontWeight: '500', textAlign: 'center' }
 })

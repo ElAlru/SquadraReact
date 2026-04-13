@@ -21,9 +21,6 @@ const STATUS_COLOR: Record<string, string> = {
 const STATUS_LABEL: Record<string, string> = {
   PAID: '✓ Pagado', PENDING: '⏳ Pendiente', OVERDUE: '❌ Vencido',
 }
-// En gestion-presidente.tsx
-const [tInicio, setTInicio] = useState('2025-09-01')
-const [tFin, setTFin] = useState('2026-06-30')
 
 type Tab = 'requests' | 'board' | 'fees' | 'club'
 
@@ -78,8 +75,8 @@ export default function GestionPresidente() {
   const [eSufijo, setESufijo] = useState('')
 
   const [tNombre, setTNombre] = useState('')
-  const [tInicio, setTInicio] = useState('')
-  const [tFin, setTFin] = useState('')
+  const [tInicio, setTInicio] = useState('2025-09-01')
+  const [tFin, setTFin] = useState('2026-06-30')
 
   const [cConcepto, setCConcepto] = useState('')
   const [cImporte, setCImporte] = useState('')
@@ -93,9 +90,10 @@ export default function GestionPresidente() {
     if (!clubId) return
     setLoading(true)
     try {
-      const [resSol, resAnuncios, resEquipos, resTemporadas] = await Promise.all([
+
+        const [resSol, resAnuncios, resEquipos, resTemporadas] = await Promise.all([
         apiFetch(`/api/president/club/${clubId}/requests`),
-        apiFetch(`/api/tablon/todos?userId=${userId}`),
+        apiFetch(`/api/president/club/${clubId}/announcements`), // ✅ LA LÍNEA DEL PRESI
         apiFetch(`/api/president/club/${clubId}/teams`),
         apiFetch(`/api/president/club/${clubId}/seasons`),
       ])
@@ -119,7 +117,12 @@ export default function GestionPresidente() {
     }
   }, [clubId, userId])
 
-  useEffect(() => { fetchData() }, [fetchData])
+  // EL FIX MÁGICO DE LA SINCRONIZACIÓN 🪄
+  useEffect(() => { 
+    if (clubId) {
+      fetchData() 
+    }
+  }, [fetchData, clubId])
 
   // ==========================================
   // 👥 SOLICITUDES
@@ -145,35 +148,65 @@ export default function GestionPresidente() {
     }
   }
 
-  const handleAprobar = async (solicitud: any) => {
-    const rolFinal = rolesSeleccionados[solicitud.id] || solicitud.requestedRole
-    const equipoId = equiposSeleccionados[solicitud.id] || null
-    const jugadorId = jugadoresSeleccionados[solicitud.id] || null
-    const parentesco = parentescosSeleccionados[solicitud.id] || null
+  const handleAprobar = async (requestId: number) => {
+    // 1. CHIVATOS DE DEPURACIÓN (Para ver en la consola al instante)
+    console.log("🔥 BOTON 'APROBAR' PULSADO PARA SOLICITUD ID:", requestId);
+    
+    // 2. RECOPILAR DATOS DEL ESTADO
+    const teamId = equiposSeleccionados[requestId];
+    const role = rolesSeleccionados[requestId] || solicitudes.find((s: any) => s.id === requestId)?.requestedRole;
+    const playerId = jugadoresSeleccionados[requestId];
+    const kinship = parentescosSeleccionados[requestId];
 
-    setIsSubmitting(true)
+    console.log("📌 Equipo seleccionado:", teamId);
+    console.log("📌 Rol a asignar:", role);
+
+    // 3. VALIDACIÓN DE SEGURIDAD
+    if (!teamId) {
+      console.warn("⚠️ ERROR: La ejecución se ha frenado porque no hay 'teamId'.");
+      Alert.alert("Atención", "Debes seleccionar un equipo (que se ponga en verde) antes de aprobar.");
+      return; // 👈 Esto es lo que frenaba el cohete
+    }
+
+    // 4. BLOQUEAR EL BOTÓN (Para no enviar la petición 5 veces)
+    setIsSubmitting(true);
+
     try {
-      const res = await apiFetch(`/api/president/club/${clubId}/requests/${solicitud.id}/approve`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          role: rolFinal,
-          teamId: equipoId,
-          playerId: jugadorId,
-          kinship: parentesco,
-        }),
-      })
+      // 5. PREPARAR EL PAQUETE PARA JAVA (Basado en ApproveRequestDto)
+      const payload = {
+        role: role,
+        teamId: teamId,
+        playerId: role === 'RELATIVE' ? playerId : null,
+        kinship: role === 'RELATIVE' ? kinship : null
+      };
+
+      console.log("📤 [Aprobación] Enviando JSON al servidor:", payload);
+
+      // 6. LANZAR EL COHETE
+      const res = await apiFetch(`/api/president/club/${clubId}/requests/${requestId}/approve`, {
+        method: "PUT",
+        body: JSON.stringify(payload)
+      });
+
+      console.log(`📥 [Aprobación] Status recibido: ${res.status}`);
+
+      // 7. RESULTADO
       if (res.ok) {
-        setSolicitudes(prev => prev.filter((s: any) => s.id !== solicitud.id))
-        Alert.alert('✅', `${solicitud.firstName} ${solicitud.lastName} aprobado como ${rolFinal}`)
+        Alert.alert("✅ Fichado", "La solicitud ha sido aprobada correctamente.");
+        fetchData(); // Recarga la lista para limpiar la pantalla
       } else {
-        Alert.alert('Error', 'No se pudo aprobar la solicitud.')
+        const errText = await res.text();
+        console.error("❌ Error devuelto por Java:", errText);
+        Alert.alert("Error del servidor", errText || "No se pudo procesar la aprobación.");
       }
     } catch (e) {
-      Alert.alert('Error', 'Fallo al aprobar.')
+      console.error("💥 Error crítico de red o código:", e);
+      Alert.alert("Error", "Fallo de conexión. Revisa tu internet o la consola.");
     } finally {
-      setIsSubmitting(false)
+      // 8. LIBERAR EL BOTÓN (Pase lo que pase, error o éxito)
+      setIsSubmitting(false);
     }
-  }
+  };
 
   const handleRechazar = async (solicitudId: number) => {
     setIsSubmitting(true)
@@ -198,25 +231,41 @@ export default function GestionPresidente() {
   // ==========================================
   const publishAnuncio = async () => {
     if (!aTitulo || !aContenido) return
+
+    // Preparamos el body (suponiendo que CreateAnnouncementDto espera title y content)
+    const payload = {
+      title: aTitulo,
+      content: aContenido,
+      teamId: aTargetTeamId,
+      clubId: clubId,
+      isPinned: aPinned,
+    };
+    
+    console.log("📤 [Anuncios] Enviando payload:", payload);
+
     setIsSubmitting(true)
     try {
-      const res = await apiFetch(`/api/president/announcements`, {
+      // 🪄 EL ARREGLO ESTÁ AQUÍ: Añadimos ?userId=${userId}
+      const res = await apiFetch(`/api/president/announcements?userId=${userId}`, {
         method: 'POST',
-        body: JSON.stringify({
-          title: aTitulo,
-          content: aContenido,
-          teamId: aTargetTeamId,
-          clubId,
-          isPinned: aPinned,
-        }),
+        body: JSON.stringify(payload),
       })
+
+      console.log("📥 [Anuncios] Respuesta servidor:", res.status);
+
       if (res.ok) {
         setModalAnuncio(false)
         setATitulo(''); setAContenido(''); setAPinned(false); setATargetTeamId(null)
         fetchData()
+        Alert.alert('✅ Éxito', 'Anuncio publicado en el tablón')
+      } else {
+        const errorText = await res.text();
+        console.error("❌ [Anuncios] Error del backend:", errorText);
+        Alert.alert('Error', `No se pudo publicar. Status: ${res.status}`);
       }
     } catch (e) {
-      Alert.alert('Error', 'Fallo al publicar.')
+      console.error("💥 [Anuncios] Error en fetch:", e);
+      Alert.alert('Error', 'Fallo de conexión al publicar anuncio.');
     } finally {
       setIsSubmitting(false)
     }
@@ -237,25 +286,46 @@ export default function GestionPresidente() {
   const handleCrearCuota = async () => {
     if (!activeSeason) return Alert.alert('Error', 'No hay temporada activa.')
     if (!cConcepto || !cImporte || !cFecha) return
+
+    // 🪄 TRUCO: Convertir "15/04/2028" a "2028-04-15"
+    let fechaFormateada = cFecha;
+    if (cFecha.includes('/')) {
+      const [dia, mes, anio] = cFecha.split('/');
+      fechaFormateada = `${anio}-${mes}-${dia}`;
+    }
+
+    const payload = {
+      concept: cConcepto,
+      amount: parseFloat(cImporte),
+      dueDate: fechaFormateada, // Mandamos la fecha traducida
+      teamId: cTargetTeamId,
+      seasonId: activeSeason.id,
+    };
+    
+    console.log("📤 1. Enviando cuota al backend:", payload);
+
     setIsSubmitting(true)
     try {
       const res = await apiFetch(`/api/president/club/${clubId}/fees`, {
         method: 'POST',
-        body: JSON.stringify({
-          concept: cConcepto,
-          amount: parseFloat(cImporte),
-          dueDate: cFecha,
-          teamId: cTargetTeamId,
-          seasonId: activeSeason.id,
-        }),
+        body: JSON.stringify(payload),
       })
+
+      console.log("📥 2. Estado de la respuesta:", res.status);
+
       if (res.ok) {
         setModalCuota(false)
         setCConcepto(''); setCImporte(''); setCFecha(''); setCTargetTeamId(null)
         fetchData()
+        Alert.alert('✅ Éxito', 'Cuota creada correctamente')
+      } else {
+        const errorText = await res.text();
+        console.error("❌ 3. Error del backend:", errorText);
+        Alert.alert('Error del Servidor', `No se pudo crear. Status: ${res.status}`);
       }
     } catch (e) {
-      Alert.alert('Error', 'Fallo al crear cuota.')
+      console.error("💥 Error en el fetch:", e);
+      Alert.alert('Error', 'Fallo al conectar con el servidor.')
     } finally {
       setIsSubmitting(false)
     }
@@ -538,7 +608,7 @@ export default function GestionPresidente() {
                     <View style={styles.actionsRow}>
                       <TouchableOpacity
                         style={[styles.aprobarBtn, { backgroundColor: c.boton, opacity: isSubmitting ? 0.6 : 1 }]}
-                        onPress={() => handleAprobar(s)}
+                        onPress={() => handleAprobar(s.id)}
                         disabled={isSubmitting}
                       >
                         {isSubmitting

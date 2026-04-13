@@ -26,29 +26,36 @@ export default function Unirse() {
 
   // 🟢 Función para llamar al backend real
   const handleJoin = async () => {
-    const cleanCode = codigo.toUpperCase().trim()
-    if (!cleanCode) return
-    
-    setIsLoading(true)
-    try {
-      const res = await apiFetch("/api/clubs/join", {
-        method: "POST",
-        body: JSON.stringify({ invitationCode: cleanCode })
-      })
+      const cleanCode = codigo.toUpperCase().trim();
+      if (!cleanCode) return;
+      
+      console.log("1. Botón pulsado. Código:", cleanCode); // 👈 Log de seguridad
+      setIsLoading(true);
 
-      if (res.ok) {
-        setSent(true)
-      } else {
-        const errorMsg = await res.text()
-        // Mostramos el error del backend (ej: "Código no válido" o "Ya tienes solicitud")
-        Alert.alert("Atención", errorMsg || "No se ha podido procesar la solicitud.")
+      try {
+        console.log("2. Llamando a apiFetch...");
+        const res = await apiFetch("/api/clubs/join", {
+          method: "POST",
+          body: JSON.stringify({ invitationCode: cleanCode })
+        });
+
+        console.log("3. Respuesta recibida. Status:", res.status);
+
+        if (res.ok) {
+          setSent(true);
+        } else {
+          const errorMsg = await res.text();
+          console.warn("4. Error del servidor:", errorMsg);
+          Alert.alert("Atención", errorMsg || "Código no válido.");
+        }
+      } catch (e) {
+        console.error("❌ Error atrapado en catch:", e);
+        Alert.alert("Error", "Fallo de conexión.");
+      } finally {
+        console.log("5. Finalizando isLoading");
+        setIsLoading(false);
       }
-    } catch (e) {
-      Alert.alert("Error", "Fallo de conexión con el servidor.")
-    } finally {
-      setIsLoading(false)
     }
-  }
 
   return (
     <KeyboardAvoidingView 

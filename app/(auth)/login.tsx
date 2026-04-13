@@ -11,13 +11,19 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+
+// 🟢 IMPORTACIONES CRUCIALES
 import { isEmpty, isValidEmail } from "../../lib/helper";
 import { supabase } from "../../lib/supabase";
 import { useTheme } from "../../lib/useTheme";
+import { useAuthStore } from "../../lib/store"; // 👈 Esta es la ruta correcta según tu PC
 
 export default function Login() {
   const c = useTheme();
   const { t } = useTranslation();
+
+  // Accedemos a la función del store para guardar la sesión
+  const setAuth = useAuthStore((state) => state.setAuth);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -29,14 +35,14 @@ export default function Login() {
     if (!isValidEmail(email)) {
       Alert.alert(
         t("common.error", "Error"),
-        t("login.errorEmail", "Introduce un email válido."),
+        t("login.errorEmail", "Introduce un email válido.")
       );
       return false;
     }
     if (isEmpty(password)) {
       Alert.alert(
         t("common.error", "Error"),
-        t("login.errorPassword", "La contraseña es obligatoria."),
+        t("login.errorPassword", "La contraseña es obligatoria.")
       );
       return false;
     }
@@ -47,21 +53,38 @@ export default function Login() {
     if (!validateFields()) return;
     setIsLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    });
+    try {
+      // 1. Intentamos el login en Supabase
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
 
-    setIsLoading(false);
+      if (error) {
+        setIsLoading(false);
+        Alert.alert(
+          "Acceso denegado",
+          "El correo y/o la contraseña son erróneos."
+        );
+        return;
+      }
 
-    if (error) {
-      Alert.alert(
-        "Acceso denegado",
-        "El correo y/o la contraseña son erróneos.",
-      );
-      return;
+      // 2. Si el login es correcto, actualizamos el Store Global
+      if (data?.user && data?.session) {
+        console.log("✅ Login exitoso en Supabase");
+        
+        // Esto hace que el estado global cambie y el Layout lo detecte
+        setAuth(data.user, data.session);
+        
+        // NOTA: No hace falta router.replace aquí porque tu _layout.tsx 
+        // probablemente ya escucha el cambio de sesión y redirige solo.
+      }
+    } catch (err) {
+      console.error("Error inesperado en login:", err);
+      Alert.alert("Error", "Ocurrió un fallo inesperado al intentar entrar.");
+    } finally {
+      setIsLoading(false);
     }
-    // Sin router.replace — el layout redirige solo al detectar el cambio de sesión
   };
 
   return (
@@ -83,14 +106,14 @@ export default function Login() {
       </View>
 
       {/* Header */}
-      <Text style={[styles.title, { color: c.texto }]}>{t("login.title")}</Text>
+      <Text style={[styles.title, { color: c.texto }]}>{t("login.title", "Bienvenido")}</Text>
       <Text style={[styles.subtitle, { color: c.subtexto }]}>
-        {t("login.subtitle")}
+        {t("login.subtitle", "Entra en tu zona de juego")}
       </Text>
 
       {/* Email */}
       <Text style={[styles.label, { color: c.subtexto }]}>
-        {t("login.email")} *
+        {t("login.email", "Email")} *
       </Text>
       <TextInput
         style={[
@@ -101,7 +124,7 @@ export default function Login() {
             color: c.texto,
           },
         ]}
-        placeholder={t("login.emailPlaceholder")}
+        placeholder={t("login.emailPlaceholder", "ejemplo@squadra.com")}
         placeholderTextColor={c.subtexto}
         value={email}
         onChangeText={setEmail}
@@ -113,7 +136,7 @@ export default function Login() {
 
       {/* Contraseña */}
       <Text style={[styles.label, { color: c.subtexto }]}>
-        {t("login.password")} *
+        {t("login.password", "Contraseña")} *
       </Text>
       <View style={styles.passwordContainer}>
         <TextInput
@@ -125,7 +148,7 @@ export default function Login() {
               color: c.texto,
             },
           ]}
-          placeholder={t("login.passwordPlaceholder")}
+          placeholder={t("login.passwordPlaceholder", "••••••••")}
           placeholderTextColor={c.subtexto}
           value={password}
           onChangeText={setPassword}
@@ -153,7 +176,7 @@ export default function Login() {
         disabled={isLoading}
       >
         <Text style={[styles.forgotText, { color: c.boton }]}>
-          {t("login.forgotPassword")}
+          {t("login.forgotPassword", "¿Olvidaste tu contraseña?")}
         </Text>
       </TouchableOpacity>
 
@@ -170,7 +193,7 @@ export default function Login() {
           <ActivityIndicator color={c.botonTexto} />
         ) : (
           <Text style={[styles.buttonText, { color: c.botonTexto }]}>
-            {t("login.button")}
+            {t("login.button", "Acceder")}
           </Text>
         )}
       </TouchableOpacity>
@@ -181,9 +204,9 @@ export default function Login() {
         onPress={() => router.push("/registro")}
         disabled={isLoading}
       >
-        <Text style={{ color: c.subtexto }}>{t("login.noAccount")} </Text>
+        <Text style={{ color: c.subtexto }}>{t("login.noAccount", "¿No tienes cuenta?")} </Text>
         <Text style={[styles.link, { color: c.boton }]}>
-          {t("login.registerLink")}
+          {t("login.registerLink", "Regístrate aquí")}
         </Text>
       </TouchableOpacity>
     </ScrollView>
