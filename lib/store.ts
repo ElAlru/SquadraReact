@@ -1,8 +1,8 @@
-import { Session, User } from "@supabase/supabase-js";
 import { create } from "zustand";
 
+// 🟢 1. Perfil del usuario
 interface UserProfile {
-  id: string;
+  userId: string;
   email: string;
   firstName: string;
   lastName: string;
@@ -10,26 +10,30 @@ interface UserProfile {
   docType: string | null;
   docNumber: string | null;
   photoUrl: string | null;
-  isActive: boolean;
 }
 
-// Definimos los roles posibles para reusarlos
 type ActiveRole = "PRESIDENT" | "COACH" | "PLAYER" | "RELATIVE" | "OTHER" | null;
 
+// 🟢 2. Definición de lo que guarda el almacén (Estado)
 interface AuthState {
-  user: User | null;
-  session: Session | null;
+  token: string | null;
   profile: UserProfile | null;
   isInitialized: boolean;
+  
   activeRole: ActiveRole;
   activeClubId: number | null;
   activeClubName: string | null;
   activeClubLogo: string | null;
   activeTeamId: number | null;
+  
+  // Temporada actual (etiqueta como "24-25")
+  activeSeasonId: string | null; 
+  activeSeasonName: string | null;
 
-  setAuth: (user: User | null, session: Session | null) => void;
+  // Acciones (Funciones para cambiar los datos)
+  setAuth: (token: string, profile: UserProfile) => void;
   setProfile: (profile: UserProfile) => void;
-  // 🟢 Firma de la función limpia
+  setSeason: (id: string, name: string) => void; // 👈 Esta es la que faltaba
   setActiveClub: (
     clubId: number, 
     clubName: string, 
@@ -38,26 +42,34 @@ interface AuthState {
     clubLogo?: string | null
   ) => void;
   
-  // 🟢 Añadimos logout para que coincida con el Layout
   logout: () => void;
   clearAuth: () => void;
 }
 
+// 🟢 3. Creación del almacén con los valores iniciales
 export const useAuthStore = create<AuthState>((set) => ({
-  user: null,
-  session: null,
+  token: null,
   profile: null,
   isInitialized: false,
+  
   activeRole: null,
   activeClubId: null,
   activeClubName: null,
   activeClubLogo: null,
   activeTeamId: null,
+  activeSeasonId: null,
+  activeSeasonName: null,
 
-  setAuth: (user, session) => set({ user, session, isInitialized: true }),
+  // Implementación de las funciones
+  setAuth: (token, profile) => set({ token, profile, isInitialized: true }),
   
   setProfile: (profile) => set({ profile }),
-  
+
+  setSeason: (id, name) => set({ 
+    activeSeasonId: id, 
+    activeSeasonName: name 
+  }),
+
   setActiveClub: (clubId, clubName, role, teamId = null, clubLogo = null) =>
     set({ 
       activeClubId: clubId, 
@@ -67,30 +79,20 @@ export const useAuthStore = create<AuthState>((set) => ({
       activeClubLogo: clubLogo 
     }),
     
-  // 🟢 logout simplemente llama a clearAuth para que no falle el Layout
   logout: () => {
     set({
-      user: null,
-      session: null,
-      profile: null,
-      activeRole: null,
-      activeClubId: null,
-      activeClubName: null,
-      activeClubLogo: null,
-      activeTeamId: null,
+      token: null, profile: null,
+      activeRole: null, activeClubId: null, activeClubName: null,
+      activeClubLogo: null, activeTeamId: null,
+      activeSeasonId: null, activeSeasonName: null
     });
   },
 
   clearAuth: () =>
     set({
-      user: null,
-      session: null,
-      profile: null,
-      isInitialized: true,
-      activeRole: null,
-      activeClubId: null,
-      activeClubName: null,
-      activeClubLogo: null,
-      activeTeamId: null,
+      token: null, profile: null, isInitialized: true,
+      activeRole: null, activeClubId: null, activeClubName: null,
+      activeClubLogo: null, activeTeamId: null,
+      activeSeasonId: null, activeSeasonName: null
     }),
 }));

@@ -1,53 +1,43 @@
 import { Stack, useRouter, useSegments } from "expo-router";
-import { useEffect } from "react";
-import { apiFetch } from "../lib/api";
+import { useEffect, useState } from "react";
 import "../lib/i18n";
 import { useAuthStore } from "../lib/store";
-import { supabase } from "../lib/supabase";
 
 export default function RootLayout() {
   const router = useRouter();
   const segments = useSegments();
-  const { setAuth, clearAuth, isInitialized, user } = useAuthStore();
+
+  // 🟢 1. En nuestro nuevo Store, lo que nos dice si estamos logueados es el 'token'
+  const token = useAuthStore((state) => state.token);
+
+  // Usamos un estado local para saber si la app ha terminado de cargar su primer pantallazo
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    // Recupera sesión persistida en SecureStore al abrir la app
-    supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session) {
-        setAuth(session.user, session);
-
-        // Carga el perfil completo desde tu API
-        try {
-          const res = await apiFetch("/profiles/me");
-          const profile = await res.json();
-          useAuthStore.getState().setProfile(profile);
-        } catch (e) {
-          console.error("Error cargando perfil:", e);
-        }
-      } else {
-        clearAuth();
-      }
-    });
-
-    // Escucha cambios: login, logout, token renovado
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      session ? setAuth(session.user, session) : clearAuth();
-    });
-
-    return () => subscription.unsubscribe();
+    // 🟢 2. Aquí antes Supabase bloqueaba la app buscando sesiones.
+    // De momento, simplemente le decimos a la app que ya puede arrancar.
+    setIsReady(true);
   }, []);
 
   useEffect(() => {
-    if (!isInitialized) return;
-    const inAuth = segments[0] === "(auth)";
+    if (!isReady) return;
 
-    if (!user && !inAuth) router.replace("/(auth)/login");
-    else if (user && inAuth) router.replace("/(selector)");
-  }, [isInitialized, user, segments]);
+    // Comprobamos si el usuario está en la carpeta de login/registro
+    const inAuthGroup = segments[0] === "(auth)";
 
-  if (!isInitialized) return null;
+    // 🟢 3. El semáforo de navegación
+    if (!token && !inAuthGroup) {
+      // Si NO tiene token y está intentando colarse en la app -> ¡Tarjeta roja y al login!
+      router.replace("/(auth)/login");
+    } else if (token && inAuthGroup) {
+      // Si SÍ tiene token pero está en la pantalla de login -> ¡Directo al vestuario (selector)!
+      // OJO: Asegúrate de que esta ruta '/(selector)' es correcta en tu proyecto.
+      router.replace("/(selector)"); 
+    }
+  }, [token, isReady, segments]);
+
+  // Mientras la app decide a dónde ir, no mostramos nada (evita parpadeos raros)
+  if (!isReady) return null;
 
   return <Stack screenOptions={{ headerShown: false }} />;
 }

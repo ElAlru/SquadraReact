@@ -54,13 +54,23 @@ export default function Login() {
     setIsLoading(true);
 
     try {
-      // 1. Intentamos el login en Supabase
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
+      // 🟢 1. Llamamos a TU backend, no a Supabase directamente
+      const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://squadraapi.onrender.com';
+
+      const response = await fetch(`${API_URL}/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          email: email.trim(),
+          password: password
+        }),
       });
 
-      if (error) {
+      // 🟢 2. Si las credenciales fallan
+      if (!response.ok) {
         setIsLoading(false);
         Alert.alert(
           "Acceso denegado",
@@ -69,19 +79,30 @@ export default function Login() {
         return;
       }
 
-      // 2. Si el login es correcto, actualizamos el Store Global
-      if (data?.user && data?.session) {
-        console.log("✅ Login exitoso en Supabase");
-        
-        // Esto hace que el estado global cambie y el Layout lo detecte
-        setAuth(data.user, data.session);
-        
-        // NOTA: No hace falta router.replace aquí porque tu _layout.tsx 
-        // probablemente ya escucha el cambio de sesión y redirige solo.
-      }
+      // 🟢 3. Si todo va bien, leemos el AuthResponse de tu Java
+      const data = await response.json();
+      console.log("✅ Login exitoso en API Java");
+
+      const userProfile = {
+        userId: data.userId,
+        email: data.email,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        phone: data.phone,
+        docType: data.docType,
+        docNumber: data.docNumber,
+        photoUrl: data.photoUrl
+      };
+      
+      // 🟢 4. Guardamos en el store global
+      setAuth(data.token, data.Profile);
+      
+      // Dependiendo de cómo tengas tu _layout, quizás necesites forzar la navegación:
+      // router.replace('/unirse'); 
+
     } catch (err) {
       console.error("Error inesperado en login:", err);
-      Alert.alert("Error", "Ocurrió un fallo inesperado al intentar entrar.");
+      Alert.alert("Error de conexión", "No hemos podido conectar con el servidor.");
     } finally {
       setIsLoading(false);
     }

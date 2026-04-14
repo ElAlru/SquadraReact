@@ -1,13 +1,15 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  ActivityIndicator, Alert, Modal, Pressable, RefreshControl,
+  ActivityIndicator, Alert, Modal,
+  Platform,
+  Pressable, RefreshControl,
   ScrollView, StyleSheet, Switch, Text, TextInput,
   TouchableOpacity, View
 } from 'react-native'
-import { useTheme } from '../../lib/useTheme'
-import { useAuthStore } from '../../lib/store'
 import { apiFetch } from '../../lib/api'
+import { useAuthStore } from '../../lib/store'
+import { useTheme } from '../../lib/useTheme'
 
 // --- CONSTANTES ---
 const ROLES = ['PLAYER', 'COACH', 'RELATIVE', 'OTHER']
@@ -90,34 +92,42 @@ export default function GestionPresidente() {
     if (!clubId) return
     setLoading(true)
     try {
-
-        const [resSol, resAnuncios, resEquipos, resTemporadas] = await Promise.all([
+      const [resSol, resEquipos, resTemporadas] = await Promise.all([
         apiFetch(`/api/president/club/${clubId}/requests`),
-        apiFetch(`/api/president/club/${clubId}/announcements`), // ✅ LA LÍNEA DEL PRESI
         apiFetch(`/api/president/club/${clubId}/teams`),
         apiFetch(`/api/president/club/${clubId}/seasons`),
       ])
 
       if (resSol.ok) setSolicitudes(await resSol.json())
-      if (resAnuncios.ok) setAnuncios(await resAnuncios.json())
       if (resEquipos.ok) setEquipos(await resEquipos.json())
+      
+      let currentActiveSeasonId = null;
+
       if (resTemporadas.ok) {
         const temps = await resTemporadas.json()
         setTemporadas(temps)
         const active = temps.find((t: any) => t.isActive)
-        if (active) {
-          const resFees = await apiFetch(`/api/president/seasons/${active.id}/fees`)
-          if (resFees.ok) setCuotas(await resFees.json())
-        }
+        if (active) currentActiveSeasonId = active.id;
+      }
+
+      if (currentActiveSeasonId) {
+        const [resAnuncios, resFees] = await Promise.all([
+          apiFetch(`/api/president/club/${clubId}/announcements?seasonId=${currentActiveSeasonId}`),
+          apiFetch(`/api/president/seasons/${currentActiveSeasonId}/fees`)
+        ])
+        if (resAnuncios.ok) setAnuncios(await resAnuncios.json())
+        if (resFees.ok) setCuotas(await resFees.json())
+      } else {
+        setAnuncios([])
+        setCuotas([])
       }
     } catch (e) {
       console.error('Error cargando datos de presidencia', e)
     } finally {
       setLoading(false)
     }
-  }, [clubId, userId])
+  }, [clubId])
 
-  // EL FIX MÁGICO DE LA SINCRONIZACIÓN 🪄
   useEffect(() => { 
     if (clubId) {
       fetchData() 
@@ -149,30 +159,18 @@ export default function GestionPresidente() {
   }
 
   const handleAprobar = async (requestId: number) => {
-    // 1. CHIVATOS DE DEPURACIÓN (Para ver en la consola al instante)
-    console.log("🔥 BOTON 'APROBAR' PULSADO PARA SOLICITUD ID:", requestId);
-    
-    // 2. RECOPILAR DATOS DEL ESTADO
     const teamId = equiposSeleccionados[requestId];
     const role = rolesSeleccionados[requestId] || solicitudes.find((s: any) => s.id === requestId)?.requestedRole;
     const playerId = jugadoresSeleccionados[requestId];
     const kinship = parentescosSeleccionados[requestId];
 
-    console.log("📌 Equipo seleccionado:", teamId);
-    console.log("📌 Rol a asignar:", role);
-
-    // 3. VALIDACIÓN DE SEGURIDAD
     if (!teamId) {
-      console.warn("⚠️ ERROR: La ejecución se ha frenado porque no hay 'teamId'.");
       Alert.alert("Atención", "Debes seleccionar un equipo (que se ponga en verde) antes de aprobar.");
-      return; // 👈 Esto es lo que frenaba el cohete
+      return; 
     }
 
-    // 4. BLOQUEAR EL BOTÓN (Para no enviar la petición 5 veces)
     setIsSubmitting(true);
-
     try {
-      // 5. PREPARAR EL PAQUETE PARA JAVA (Basado en ApproveRequestDto)
       const payload = {
         role: role,
         teamId: teamId,
@@ -180,30 +178,21 @@ export default function GestionPresidente() {
         kinship: role === 'RELATIVE' ? kinship : null
       };
 
-      console.log("📤 [Aprobación] Enviando JSON al servidor:", payload);
-
-      // 6. LANZAR EL COHETE
       const res = await apiFetch(`/api/president/club/${clubId}/requests/${requestId}/approve`, {
         method: "PUT",
         body: JSON.stringify(payload)
       });
 
-      console.log(`📥 [Aprobación] Status recibido: ${res.status}`);
-
-      // 7. RESULTADO
       if (res.ok) {
         Alert.alert("✅ Fichado", "La solicitud ha sido aprobada correctamente.");
-        fetchData(); // Recarga la lista para limpiar la pantalla
+        fetchData();
       } else {
         const errText = await res.text();
-        console.error("❌ Error devuelto por Java:", errText);
         Alert.alert("Error del servidor", errText || "No se pudo procesar la aprobación.");
       }
     } catch (e) {
-      console.error("💥 Error crítico de red o código:", e);
       Alert.alert("Error", "Fallo de conexión. Revisa tu internet o la consola.");
     } finally {
-      // 8. LIBERAR EL BOTÓN (Pase lo que pase, error o éxito)
       setIsSubmitting(false);
     }
   };
@@ -230,14 +219,22 @@ export default function GestionPresidente() {
   // 📢 ANUNCIOS
   // ==========================================
   const publishAnuncio = async () => {
-    if (!aTitulo || !aContenido) return
+    if (!aTitulo || !aContenido) return;
+    
+    // 🟢 Aseguramos obtener el ID de la temporada activa a toda costa
+    const sId = activeSeason?.id || temporadas.find((t: any) => t.isActive)?.id;
 
-    // Preparamos el body (suponiendo que CreateAnnouncementDto espera title y content)
+    if (!sId) {
+      Alert.alert('Error', 'Debes tener una temporada activa seleccionada para publicar anuncios.');
+      return;
+    }
+
     const payload = {
       title: aTitulo,
       content: aContenido,
       teamId: aTargetTeamId,
       clubId: clubId,
+      seasonId: Number(sId), // 👈 Aseguramos que es un número válido
       isPinned: aPinned,
     };
     
@@ -245,26 +242,23 @@ export default function GestionPresidente() {
 
     setIsSubmitting(true)
     try {
-      // 🪄 EL ARREGLO ESTÁ AQUÍ: Añadimos ?userId=${userId}
       const res = await apiFetch(`/api/president/announcements?userId=${userId}`, {
         method: 'POST',
         body: JSON.stringify(payload),
       })
 
-      console.log("📥 [Anuncios] Respuesta servidor:", res.status);
-
       if (res.ok) {
         setModalAnuncio(false)
         setATitulo(''); setAContenido(''); setAPinned(false); setATargetTeamId(null)
         fetchData()
-        Alert.alert('✅ Éxito', 'Anuncio publicado en el tablón')
+        if (Platform.OS !== 'web') Alert.alert('✅ Éxito', 'Anuncio publicado en el tablón')
       } else {
         const errorText = await res.text();
-        console.error("❌ [Anuncios] Error del backend:", errorText);
+        console.error("❌ Error backend:", errorText);
         Alert.alert('Error', `No se pudo publicar. Status: ${res.status}`);
       }
     } catch (e) {
-      console.error("💥 [Anuncios] Error en fetch:", e);
+      console.error("💥 Error de red:", e);
       Alert.alert('Error', 'Fallo de conexión al publicar anuncio.');
     } finally {
       setIsSubmitting(false)
@@ -272,11 +266,22 @@ export default function GestionPresidente() {
   }
 
   const handleEliminarAnuncio = async (id: number) => {
-    try {
-      await apiFetch(`/api/president/announcements/${id}`, { method: 'DELETE' })
-      setAnuncios(prev => prev.filter((a: any) => a.id !== id))
-    } catch (e) {
-      Alert.alert('Error', 'No se pudo eliminar el anuncio.')
+    const ejecutarBorrado = async () => {
+      try {
+        await apiFetch(`/api/president/announcements/${id}`, { method: 'DELETE' })
+        setAnuncios(prev => prev.filter((a: any) => a.id !== id))
+      } catch (e) {
+        Alert.alert('Error', 'No se pudo eliminar el anuncio.')
+      }
+    }
+
+    if (Platform.OS === 'web') {
+      if (window.confirm("¿Seguro que quieres borrar este anuncio?")) ejecutarBorrado();
+    } else {
+      Alert.alert("Eliminar", "¿Seguro que quieres borrar este anuncio?", [
+        { text: "Cancelar", style: "cancel" },
+        { text: "Borrar", style: "destructive", onPress: ejecutarBorrado }
+      ]);
     }
   }
 
@@ -284,10 +289,10 @@ export default function GestionPresidente() {
   // 💶 CUOTAS
   // ==========================================
   const handleCrearCuota = async () => {
-    if (!activeSeason) return Alert.alert('Error', 'No hay temporada activa.')
+    const sId = activeSeason?.id || temporadas.find((t: any) => t.isActive)?.id;
+    if (!sId) return Alert.alert('Error', 'No hay temporada activa.')
     if (!cConcepto || !cImporte || !cFecha) return
 
-    // 🪄 TRUCO: Convertir "15/04/2028" a "2028-04-15"
     let fechaFormateada = cFecha;
     if (cFecha.includes('/')) {
       const [dia, mes, anio] = cFecha.split('/');
@@ -297,13 +302,11 @@ export default function GestionPresidente() {
     const payload = {
       concept: cConcepto,
       amount: parseFloat(cImporte),
-      dueDate: fechaFormateada, // Mandamos la fecha traducida
+      dueDate: fechaFormateada, 
       teamId: cTargetTeamId,
-      seasonId: activeSeason.id,
+      seasonId: Number(sId),
     };
     
-    console.log("📤 1. Enviando cuota al backend:", payload);
-
     setIsSubmitting(true)
     try {
       const res = await apiFetch(`/api/president/club/${clubId}/fees`, {
@@ -311,20 +314,15 @@ export default function GestionPresidente() {
         body: JSON.stringify(payload),
       })
 
-      console.log("📥 2. Estado de la respuesta:", res.status);
-
       if (res.ok) {
         setModalCuota(false)
         setCConcepto(''); setCImporte(''); setCFecha(''); setCTargetTeamId(null)
         fetchData()
-        Alert.alert('✅ Éxito', 'Cuota creada correctamente')
+        if (Platform.OS !== 'web') Alert.alert('✅ Éxito', 'Cuota creada correctamente')
       } else {
-        const errorText = await res.text();
-        console.error("❌ 3. Error del backend:", errorText);
         Alert.alert('Error del Servidor', `No se pudo crear. Status: ${res.status}`);
       }
     } catch (e) {
-      console.error("💥 Error en el fetch:", e);
       Alert.alert('Error', 'Fallo al conectar con el servidor.')
     } finally {
       setIsSubmitting(false)
@@ -358,8 +356,11 @@ export default function GestionPresidente() {
   // ==========================================
   // 🗓️ TEMPORADAS
   // ==========================================
+  // Al principio del componente, importa la nueva acción:
+  const updateActiveSeason = useAuthStore((state: any) => state.updateActiveSeason)
+
+  // Luego sustituye handleToggleSeason por esto:
   const handleToggleSeason = async (id: number) => {
-    // Solo se puede activar, no desactivar manualmente
     const temporada = temporadas.find((t: any) => t.id === id)
     if (temporada?.isActive) return Alert.alert('Atención', 'No puedes desactivar una temporada directamente. Activa otra para desactivar esta.')
 
@@ -367,8 +368,13 @@ export default function GestionPresidente() {
       ...t,
       isActive: t.id === id,
     })))
+
     try {
       await apiFetch(`/api/president/seasons/${id}/toggle`, { method: 'PATCH' })
+      
+      // 🟢 ESTO ES LO QUE FALTABA: actualizar el Store global
+      updateActiveSeason(temporada.id, temporada.name)
+      
       fetchData()
     } catch (e) {
       Alert.alert('Error', 'No se pudo cambiar el estado de la temporada.')
@@ -400,8 +406,10 @@ export default function GestionPresidente() {
   // 👕 EQUIPOS
   // ==========================================
   const saveEquipo = async () => {
-    if (!activeSeason) return Alert.alert('Atención', 'Debes tener una temporada activa para crear equipos.')
+    const sId = activeSeason?.id || temporadas.find((t: any) => t.isActive)?.id;
+    if (!sId) return Alert.alert('Atención', 'Debes tener una temporada activa para crear equipos.')
     if (!eSufijo) return
+    
     setIsSubmitting(true)
     try {
       const res = await apiFetch(`/api/president/club/${clubId}/teams`, {
@@ -410,7 +418,7 @@ export default function GestionPresidente() {
           category: eCategoria,
           gender: eGenero,
           suffix: eSufijo,
-          seasonId: activeSeason.id,
+          seasonId: Number(sId),
         }),
       })
       if (res.ok) {
@@ -435,8 +443,6 @@ export default function GestionPresidente() {
   // ==========================================
   return (
     <View style={[styles.wrapper, { backgroundColor: c.fondo }]}>
-
-      {/* HEADER FIJO CON TABS */}
       <View style={[styles.headerFixed, { backgroundColor: c.fondo, borderBottomColor: c.bordeInput }]}>
         <Text style={[styles.titulo, { color: c.texto }]}>
           👑 Presidencia
@@ -472,7 +478,6 @@ export default function GestionPresidente() {
         refreshControl={<RefreshControl refreshing={loading} onRefresh={fetchData} tintColor={c.boton} />}
       >
 
-        {/* ==================== TAB SOLICITUDES ==================== */}
         {tab === 'requests' && (
           <View>
             {solicitudes.length === 0 ? (
@@ -488,8 +493,6 @@ export default function GestionPresidente() {
 
                 return (
                   <View key={s.id} style={[styles.requestCard, { backgroundColor: c.input, borderColor: c.bordeInput }]}>
-
-                    {/* Header solicitud */}
                     <View style={styles.requestHeader}>
                       <View style={[styles.avatar, { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` }]}>
                         <Text style={[styles.avatarText, { color: c.boton }]}>{s.firstName?.charAt(0)}</Text>
@@ -500,14 +503,12 @@ export default function GestionPresidente() {
                       </View>
                     </View>
 
-                    {/* Mensaje */}
                     {s.message && (
                       <View style={[styles.mensajeBox, { backgroundColor: c.fondo, borderColor: c.bordeInput }]}>
                         <Text style={[styles.mensajeText, { color: c.subtexto }]}>"{s.message}"</Text>
                       </View>
                     )}
 
-                    {/* Selector de rol */}
                     <Text style={[styles.selectLabel, { color: c.subtexto }]}>Rol</Text>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
                       <View style={styles.chipsRow}>
@@ -526,7 +527,6 @@ export default function GestionPresidente() {
                       </View>
                     </ScrollView>
 
-                    {/* Selector de equipo */}
                     <Text style={[styles.selectLabel, { color: c.subtexto }]}>Equipo</Text>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
                       <View style={styles.chipsRow}>
@@ -547,7 +547,6 @@ export default function GestionPresidente() {
                       </View>
                     </ScrollView>
 
-                    {/* Si es RELATIVE → selector de jugador */}
                     {esRelative && equipoActualId && (
                       <>
                         <Text style={[styles.selectLabel, { color: c.subtexto }]}>Jugador familiar</Text>
@@ -579,7 +578,6 @@ export default function GestionPresidente() {
                           )}
                         </View>
 
-                        {/* Selector parentesco */}
                         {jugadoresSeleccionados[s.id] && (
                           <>
                             <Text style={[styles.selectLabel, { color: c.subtexto, marginTop: 10 }]}>Parentesco</Text>
@@ -604,7 +602,6 @@ export default function GestionPresidente() {
                       </>
                     )}
 
-                    {/* Botones aprobar/rechazar */}
                     <View style={styles.actionsRow}>
                       <TouchableOpacity
                         style={[styles.aprobarBtn, { backgroundColor: c.boton, opacity: isSubmitting ? 0.6 : 1 }]}
@@ -631,7 +628,6 @@ export default function GestionPresidente() {
           </View>
         )}
 
-        {/* ==================== TAB TABLÓN ==================== */}
         {tab === 'board' && (
           <View>
             <TouchableOpacity style={[styles.primaryButton, { backgroundColor: c.boton }]} onPress={() => setModalAnuncio(true)}>
@@ -684,7 +680,6 @@ export default function GestionPresidente() {
           </View>
         )}
 
-        {/* ==================== TAB CUOTAS ==================== */}
         {tab === 'fees' && (
           <View>
             {!activeSeason ? (
@@ -744,12 +739,10 @@ export default function GestionPresidente() {
           </View>
         )}
 
-        {/* ==================== TAB MI CLUB ==================== */}
         {tab === 'club' && (
           <View>
             <Text style={[styles.subSectionTitle, { color: c.texto }]}>🏆 {activeClubName}</Text>
 
-            {/* ── TEMPORADAS ── */}
             <View style={styles.subSectionHeader}>
               <Text style={[styles.subSectionTitle, { color: c.texto, marginBottom: 0 }]}>🗓 Temporadas</Text>
               <TouchableOpacity
@@ -791,7 +784,6 @@ export default function GestionPresidente() {
               </View>
             )}
 
-            {/* ── EQUIPOS (de la temporada activa) ── */}
             <View style={styles.subSectionHeader}>
               <View>
                 <Text style={[styles.subSectionTitle, { color: c.texto, marginBottom: 0 }]}>👕 Equipos</Text>
@@ -842,7 +834,7 @@ export default function GestionPresidente() {
 
       </ScrollView>
 
-      {/* ==================== MODAL NUEVO ANUNCIO ==================== */}
+      {/* MODALES */}
       <Modal visible={modalAnuncio} transparent animationType="slide" onRequestClose={() => setModalAnuncio(false)}>
         <Pressable style={styles.overlay} onPress={() => setModalAnuncio(false)}>
           <Pressable style={[styles.modalCard, { backgroundColor: c.fondo, borderColor: c.bordeInput }]} onPress={() => {}}>
@@ -896,7 +888,6 @@ export default function GestionPresidente() {
         </Pressable>
       </Modal>
 
-      {/* ==================== MODAL NUEVA CUOTA ==================== */}
       <Modal visible={modalCuota} transparent animationType="slide" onRequestClose={() => setModalCuota(false)}>
         <Pressable style={styles.overlay} onPress={() => setModalCuota(false)}>
           <Pressable style={[styles.modalCard, { backgroundColor: c.fondo, borderColor: c.bordeInput }]} onPress={() => {}}>
@@ -948,7 +939,6 @@ export default function GestionPresidente() {
         </Pressable>
       </Modal>
 
-      {/* ==================== MODAL DETALLE CUOTA ==================== */}
       <Modal visible={modalDetalleCuota} transparent animationType="slide" onRequestClose={() => setModalDetalleCuota(false)}>
         <Pressable style={styles.overlay} onPress={() => setModalDetalleCuota(false)}>
           <Pressable style={[styles.modalCard, { backgroundColor: c.fondo, borderColor: c.bordeInput }]} onPress={() => {}}>
@@ -992,7 +982,6 @@ export default function GestionPresidente() {
         </Pressable>
       </Modal>
 
-      {/* ==================== MODAL NUEVA TEMPORADA ==================== */}
       <Modal visible={modalTemporada} transparent animationType="slide" onRequestClose={() => setModalTemporada(false)}>
         <Pressable style={styles.overlay} onPress={() => setModalTemporada(false)}>
           <Pressable style={[styles.modalCard, { backgroundColor: c.fondo, borderColor: c.bordeInput }]} onPress={() => {}}>
@@ -1023,7 +1012,6 @@ export default function GestionPresidente() {
         </Pressable>
       </Modal>
 
-      {/* ==================== MODAL NUEVO EQUIPO ==================== */}
       <Modal visible={modalEquipo} transparent animationType="slide" onRequestClose={() => setModalEquipo(false)}>
         <Pressable style={styles.overlay} onPress={() => setModalEquipo(false)}>
           <Pressable style={[styles.modalCard, { backgroundColor: c.fondo, borderColor: c.bordeInput }]} onPress={() => {}}>
@@ -1099,12 +1087,8 @@ const styles = StyleSheet.create({
   tabText: { fontSize: 14, fontWeight: '600' },
   container: { padding: 24, paddingBottom: 40 },
   list: { gap: 10 },
-
-  // Empty
   emptyCard: { borderRadius: 14, borderWidth: 1, padding: 20, alignItems: 'center', marginBottom: 12 },
   emptyText: { fontSize: 14 },
-
-  // Solicitudes
   requestCard: { borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 12, gap: 10 },
   requestHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   avatar: { width: 40, height: 40, borderRadius: 12, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
@@ -1128,8 +1112,6 @@ const styles = StyleSheet.create({
   aprobarBtn: { flex: 1, padding: 10, borderRadius: 10, alignItems: 'center' },
   rechazarBtn: { flex: 1, padding: 10, borderRadius: 10, alignItems: 'center', borderWidth: 1 },
   actionBtnText: { fontSize: 13, fontWeight: '600', color: '#ffffff' },
-
-  // Tablón
   primaryButton: { padding: 14, borderRadius: 12, alignItems: 'center', marginBottom: 16 },
   primaryButtonText: { fontWeight: 'bold', fontSize: 15 },
   anuncioCard: { borderRadius: 14, padding: 14, gap: 6, marginBottom: 10 },
@@ -1143,8 +1125,6 @@ const styles = StyleSheet.create({
   anuncioMeta: { fontSize: 11 },
   badge: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2 },
   badgeText: { fontSize: 11, fontWeight: '600' },
-
-  // Cuotas
   cuotaCard: { borderRadius: 14, borderWidth: 1, padding: 14, gap: 8, marginBottom: 10 },
   cuotaHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   cuotaTitulo: { fontSize: 15, fontWeight: '700' },
@@ -1164,8 +1144,6 @@ const styles = StyleSheet.create({
   markPaidText: { fontSize: 12, fontWeight: '600' },
   statusPill: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 },
   statusText: { fontSize: 11, fontWeight: '600' },
-
-  // Club
   subSectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   subSectionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 10 },
   seasonLabel: { fontSize: 12, marginTop: 2 },
@@ -1175,8 +1153,6 @@ const styles = StyleSheet.create({
   equipoInfo: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   equipoNombre: { fontSize: 14, fontWeight: '600' },
   chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 14 },
-
-  // Modales
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end', padding: 16, paddingBottom: 32 },
   modalCard: { borderRadius: 20, borderWidth: 1, padding: 20 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
@@ -1186,5 +1162,5 @@ const styles = StyleSheet.create({
   inputLabel: { fontSize: 13, fontWeight: '500', marginBottom: 6 },
   input: { borderWidth: 1, borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 14 },
   textArea: { borderWidth: 1, borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 14, minHeight: 100 },
-  switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }
 })

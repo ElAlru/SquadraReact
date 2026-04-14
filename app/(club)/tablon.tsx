@@ -1,12 +1,20 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
-import { 
-  StyleSheet, Text, View, ScrollView, TouchableOpacity, 
-  ActivityIndicator, LayoutAnimation, Platform, UIManager, RefreshControl,
-  Alert // 🟢 Importante para confirmar el borrado
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  ActivityIndicator,
+  Alert,
+  LayoutAnimation, Platform,
+  RefreshControl,
+  ScrollView,
+  StyleSheet, Text,
+  TouchableOpacity,
+  UIManager,
+  View
 } from 'react-native'
-import { useTheme } from '../../lib/useTheme'
-import { useAuthStore } from '../../lib/store'
 import { apiFetch } from '../../lib/api'
+import { useAuthStore } from '../../lib/store'
+import { useTheme } from '../../lib/useTheme'
+// Busca donde importas 'expo-router' (si no lo tienes, añádelo)
+import { useFocusEffect } from 'expo-router'
 
 // Habilitar animaciones en Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -17,10 +25,12 @@ export default function Tablon() {
   const c = useTheme()
   
   // --- DATA DEL STORE ---
-  const clubId = useAuthStore((state: any) => state.activeClubId) // 🟢 Necesario para el Presi
+  const clubId = useAuthStore((state: any) => state.activeClubId) 
   const activeTeamId = useAuthStore((state: any) => state.activeTeamId)
-  const activeRole = useAuthStore((state: any) => state.activeRole) // 🟢 Para saber si es Presi
+  const activeRole = useAuthStore((state: any) => state.activeRole) 
   const userId = useAuthStore((state: any) => state.user?.id)
+  // 🟢 AÑADIDO: Necesitamos el ID de la temporada activa para filtrar
+  const activeSeasonId = useAuthStore((state: any) => state.activeSeasonId)
   
   // --- ESTADOS ---
   const [anuncios, setAnuncios] = useState<any[]>([])
@@ -30,41 +40,65 @@ export default function Tablon() {
   const [expandedId, setExpandedId] = useState<number | null>(null)
 
   // --- CARGA DE DATOS ---
-  const fetchAnuncios = useCallback(async () => {
-    // 🟢 Si es jugador/coach sin equipo, no carga. Si es presi, carga siempre con su club.
-    if ((activeRole !== 'PRESIDENT' && !activeTeamId) || !userId || !clubId) return
-
-    try {
-      // 🟢 Enrutamiento inteligente según el rol
-      const url = activeRole === 'PRESIDENT'
-        ? `/api/president/club/${clubId}/announcements`
-        : `/api/tablon/todos?teamId=${activeTeamId}&userId=${userId}`
-
-      const res = await apiFetch(url)
-      
-      if (res.ok) {
-        // Asegurar que si viene vacío 204 no pete
-        const data = res.status === 204 ? [] : await res.json()
-        setAnuncios(Array.isArray(data) ? data : [])
-      }
-    } catch (e) {
-      console.error("Error al cargar el tablón:", e)
-    } finally {
-      setLoading(false)
-      setRefreshing(false)
-    }
-  }, [activeTeamId, userId, clubId, activeRole])
 
   useEffect(() => {
-    fetchAnuncios()
-  }, [fetchAnuncios])
+    // Si el usuario no tiene temporada activa en el store, vamos a buscarla
+    if (!activeSeasonId && clubId) {
+      apiFetch(`/api/president/club/${clubId}/seasons`)
+        .then(res => res.json())
+        .then(seasons => {
+          const active = seasons.find((s: any) => s.isActive);
+          if (active) {
+            // Guardamos en el store localmente (si tienes la función set en el store)
+            // useAuthStore.setState({ activeSeasonId: active.id });
+          }
+        });
+    }
+  }, [clubId, activeSeasonId]);
+const fetchAnuncios = useCallback(async () => {
+    // 🟢 Si faltan datos críticos, paramos la carga pero quitamos la ruedita
+    if (!userId || !clubId) {
+      setLoading(false);
+      return;
+    }
+
+    // Si es un jugador y aún no tiene equipo o no hay temporada activa en el store
+    if ((activeRole !== 'PRESIDENT' && !activeTeamId) || !activeSeasonId) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const url = activeRole === 'PRESIDENT'
+        ? `/api/president/club/${clubId}/announcements?seasonId=${activeSeasonId}`
+        : `/api/tablon/todos?teamId=${activeTeamId}&userId=${userId}&seasonId=${activeSeasonId}`;
+
+      const res = await apiFetch(url);
+      
+      if (res.ok) {
+        const data = res.status === 204 ? [] : await res.json();
+        setAnuncios(Array.isArray(data) ? data : []);
+      }
+    } catch (e) {
+      console.error("Error al cargar el tablón:", e);
+    } finally {
+      // 🟢 Esto asegura que la ruedita siempre pare, pase lo que pase
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [activeTeamId, userId, clubId, activeRole, activeSeasonId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      // Esto se ejecuta cada vez que entras a la pestaña Tablón
+      fetchAnuncios();
+    }, [fetchAnuncios])
+  );
 
   // --- LÓGICA DE BORRADO (Solo Presidente) ---
-// --- LÓGICA DE BORRADO (Compatible Web/Móvil) ---
   const ejecutarBorrado = async (id: number) => {
     console.log(`🔥 Intentando borrar anuncio con ID: ${id}...`);
     try {
-      // Ajusta esta ruta si tu endpoint de Java es diferente
       const res = await apiFetch(`/api/president/announcements/${id}`, { method: 'DELETE' });
       
       if (res.ok) {
@@ -83,13 +117,11 @@ export default function Tablon() {
 
   const handleEliminarAnuncio = (id: number) => {
     if (Platform.OS === 'web') {
-      // 🌐 Pop-up especial para navegador Web
       const confirmado = window.confirm("¿Estás seguro de que quieres borrar este anuncio permanentemente?");
       if (confirmado) {
         ejecutarBorrado(id);
       }
     } else {
-      // 📱 Pop-up nativo para iOS/Android
       Alert.alert(
         "Eliminar Anuncio",
         "¿Estás seguro de que quieres borrar este anuncio permanentemente?",
@@ -108,17 +140,14 @@ export default function Tablon() {
     const isOpening = expandedId !== anuncio.id
     setExpandedId(isOpening ? anuncio.id : null)
 
-    // 🟢 Mapeamos los campos del DTO (puede venir como isRead o read según el endpoint)
     const isLeido = anuncio.isRead !== undefined ? anuncio.isRead : anuncio.read;
 
     if (isOpening && !isLeido) {
-      // 1. Optimistic Update
       setAnuncios(prev => prev.map(a => 
         a.id === anuncio.id ? { ...a, isRead: true, read: true } : a
       ))
 
       try {
-        // 2. Notificar lectura (solo si tienes endpoint de lectura implementado)
         if (activeRole !== 'PRESIDENT') {
           await apiFetch(`/api/tablon/leer/${anuncio.id}?userId=${userId}`, { method: 'POST' })
         }
@@ -131,7 +160,6 @@ export default function Tablon() {
   // --- FILTRADO EN MEMORIA ---
   const anunciosFiltrados = useMemo(() => {
     return anuncios.filter(a => {
-      // 🟢 Mapeamos isClub/club (por si el backend manda 'club' en vez de 'isClub')
       const isAnuncioClub = a.isClub !== undefined ? a.isClub : a.club;
 
       if (filtro === 'TODOS') return true
@@ -159,7 +187,7 @@ export default function Tablon() {
             key={f} 
             onPress={() => {
               setFiltro(f)
-              setExpandedId(null) // Cerrar tarjetas al cambiar filtro
+              setExpandedId(null) 
             }}
             style={[
               styles.filterBtn, 
@@ -185,7 +213,6 @@ export default function Tablon() {
       >
         {anunciosFiltrados.length > 0 ? (
           anunciosFiltrados.map((a) => {
-            // Adaptación de los nombres del DTO de Java
             const isPinned = a.isPinned !== undefined ? a.isPinned : a.pinned;
             const isClub = a.isClub !== undefined ? a.isClub : a.club;
             const isRead = a.isRead !== undefined ? a.isRead : a.read;

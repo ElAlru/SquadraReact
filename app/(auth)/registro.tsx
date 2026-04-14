@@ -126,17 +126,14 @@ const handleRegister = async () => {
         body: JSON.stringify(payload),
       })
 
-      // VALIDACIÓN 2: Errores devueltos por el servidor (Duplicados, caídas...)
+      // 🛡️ VALIDACIÓN 2: Errores del servidor (Ciberseguridad aplicada)
       if (!response.ok) {
-        const errorText = await response.text()
-        
-        if (errorText.includes('uq_profiles_documents') || errorText.includes('duplicate key')) {
-          Alert.alert("Error de registro", "Este documento de identidad ya está registrado en nuestro sistema.")
-        } else if (errorText.includes('already exists') || errorText.includes('Email')) {
-           Alert.alert("Error de registro", "Este correo electrónico ya está en uso.")
-        } else {
-          Alert.alert("Error del servidor", "No se pudo completar el registro. Verifica los datos e inténtalo de nuevo.")
-        }
+        // Por seguridad, no especificamos si el fallo es por DNI o Email duplicado.
+        // Damos un mensaje genérico para evitar enumeración de usuarios.
+        Alert.alert(
+          "No se pudo completar", 
+          "Verifica que los datos sean correctos. Si ya tenías una cuenta creada, intenta iniciar sesión."
+        )
         
         // El return hace que se pare el código aquí (no navega a otra pantalla si hay error)
         return
