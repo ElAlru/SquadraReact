@@ -95,10 +95,10 @@ export default function Login() {
       };
       
       // 🟢 4. Guardamos en el store global
-      setAuth(data.token, data.Profile);
+      setAuth(data.token, userProfile);
       
       // Dependiendo de cómo tengas tu _layout, quizás necesites forzar la navegación:
-      // router.replace('/unirse'); 
+      router.replace('/unirse'); 
 
     } catch (err) {
       console.error("Error inesperado en login:", err);
