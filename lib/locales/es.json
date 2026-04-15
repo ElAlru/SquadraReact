@@ -250,6 +250,16 @@
 ,
   "fields": "Campos"
 },
+"profile": {
+  "data": "Datos",
+  "phone": "Teléfono",
+  "document": "Documento",
+  "language": "Idioma",
+  "theme": "Tema",
+  "themeAuto": "Auto",
+  "themeLight": "Claro",
+  "themeDark": "Oscuro"
+},
 "fields": {
   "title": "Campos",
   "addField": "+ Añadir campo",

@@ -119,9 +119,11 @@ function DrawerContent({ navigation }: { navigation: any }) {
 
 export default function ClubLayout() {
   const c = useTheme()
-  
+  const router = useRouter()
+
   // Obtenemos el rol actual para configurar las pantallas del Drawer
   const activeRole = useAuthStore((state: any) => state.activeRole)
+  const profile = useAuthStore((state: any) => state.profile)
   const esPresidente = activeRole === 'PRESIDENT'
   const esCoach = activeRole === 'COACH' || activeRole === 'PRESIDENT'
 
@@ -145,6 +147,18 @@ export default function ClubLayout() {
         headerTitle: () => (
           <Text style={styles.headerBrand}>SQUADRA</Text>
         ),
+        headerRight: () => (
+    <TouchableOpacity
+      style={styles.avatarHeaderBtn}
+      onPress={() => navigation.navigate('mi-perfil')}
+    >
+      <View style={[styles.avatarHeaderCircle, { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` }]}>
+        <Text style={[styles.avatarHeaderText, { color: c.boton }]}>
+          {profile?.firstName?.charAt(0)?.toUpperCase() || 'U'}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  ),
       })}
     >
       <Drawer.Screen name="inicio" />
@@ -163,6 +177,10 @@ export default function ClubLayout() {
         options={{ drawerItemStyle: { display: esPresidente ? 'flex' : 'none' } }}
       />
       <Drawer.Screen name="campos" />
+      <Drawer.Screen
+        name="mi-perfil"
+        options={{ drawerItemStyle: { display: 'none' } }}
+      />
     </Drawer>
   )
 }
@@ -282,5 +300,20 @@ const styles = StyleSheet.create({
   },
   drawerVersion: {
     fontSize: 12,
+  },
+  avatarHeaderBtn: {
+    marginRight: 16,
+  },
+  avatarHeaderCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarHeaderText: {
+    fontSize: 15,
+    fontWeight: 'bold',
   },
 })

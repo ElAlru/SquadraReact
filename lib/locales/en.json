@@ -249,6 +249,16 @@
   "logout": "Log out",
   "fields": "Fields"
 },
+"profile": {
+  "data": "Details",
+  "phone": "Phone",
+  "document": "Document",
+  "language": "Language",
+  "theme": "Theme",
+  "themeAuto": "Auto",
+  "themeLight": "Light",
+  "themeDark": "Dark"
+},
 "fields": {
   "title": "Fields",
   "addField": "+ Add field",

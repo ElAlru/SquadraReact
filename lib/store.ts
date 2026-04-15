@@ -30,10 +30,17 @@ interface AuthState {
   activeSeasonId: string | null; 
   activeSeasonName: string | null;
 
+  //Tema y lenguaje
+  themeMode: 'auto' | 'light' | 'dark'
+  language: 'es' | 'en'
+
+
   // Acciones (Funciones para cambiar los datos)
   setAuth: (token: string, profile: UserProfile) => void;
   setProfile: (profile: UserProfile) => void;
-  setSeason: (id: string, name: string) => void; // 👈 Esta es la que faltaba
+  setSeason: (id: string, name: string) => void;
+  setThemeMode: (mode: 'auto' | 'light' | 'dark') => void
+  setLanguage: (lang: 'es' | 'en') => void
   setActiveClub: (
     clubId: number, 
     clubName: string, 
@@ -46,12 +53,13 @@ interface AuthState {
   clearAuth: () => void;
 }
 
-// 🟢 3. Creación del almacén con los valores iniciales
+// Creación del almacén con los valores iniciales
 export const useAuthStore = create<AuthState>((set) => ({
   token: null,
   profile: null,
   isInitialized: false,
-  
+  themeMode: 'auto',
+  language: 'es',
   activeRole: null,
   activeClubId: null,
   activeClubName: null,
@@ -78,6 +86,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       activeTeamId: teamId, 
       activeClubLogo: clubLogo 
     }),
+  setThemeMode: (mode) => set({ themeMode: mode }),
+  setLanguage: (lang) => set({ language: lang }),
     
   logout: () => {
     set({
