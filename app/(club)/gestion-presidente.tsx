@@ -1,1166 +1,713 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useTranslation } from 'react-i18next'
+import React, { useState, useEffect, useCallback } from "react";
 import {
-  ActivityIndicator, Alert, Modal,
-  Platform,
-  Pressable, RefreshControl,
-  ScrollView, StyleSheet, Switch, Text, TextInput,
-  TouchableOpacity, View
-} from 'react-native'
-import { apiFetch } from '../../lib/api'
-import { useAuthStore } from '../../lib/store'
-import { useTheme } from '../../lib/useTheme'
+  View, Text, TouchableOpacity, ScrollView, Modal, TextInput,
+  StyleSheet, Alert, ActivityIndicator, FlatList
+} from "react-native";
+import { apiFetch } from "../../lib/api";
+import { useAuthStore } from "../../lib/store";
+import { useTheme } from "../../lib/useTheme";
 
-// --- CONSTANTES ---
-const ROLES = ['PLAYER', 'COACH', 'RELATIVE', 'OTHER']
-const PARENTESCOS = ['FATHER', 'MOTHER', 'LEGAL_GUARDIAN', 'OTHER']
-const CATEGORIAS = ['U6', 'U8', 'U10', 'U12', 'U14', 'U16', 'U19', 'SENIOR']
-const GENEROS = ['MALE', 'FEMALE', 'MIXED']
+type Tab = "SOLICITUDES" | "CUOTAS" | "EQUIPOS";
 
-const STATUS_COLOR: Record<string, string> = {
-  PAID: '#16a34a', PENDING: '#f59e0b', OVERDUE: '#ef4444',
-}
-const STATUS_LABEL: Record<string, string> = {
-  PAID: '✓ Pagado', PENDING: '⏳ Pendiente', OVERDUE: '❌ Vencido',
+interface JoinRequest {
+  id: number;
+  userId: string;
+  userFullName: string;
+  userEmail: string;
+  requestedRole: string;
+  status: string;
+  message: string | null;
+  requestedAt: string;
 }
 
-type Tab = 'requests' | 'board' | 'fees' | 'club'
+interface FeeWithPayments {
+  feeId: number;
+  concept: string;
+  amount: number;
+  dueDate: string;
+  payments: PaymentItem[];
+}
+
+interface PaymentItem {
+  paymentId: number;
+  playerId: number;
+  playerName: string;
+  status: "PENDING" | "PAID" | "OVERDUE";
+  paidDate: string | null;
+}
+
+interface Team {
+  id: number;
+  category: string;
+  gender: string;
+  suffix: string;
+  isActive: boolean;
+  seasonLabel: string;
+}
+
+// ─── ENUMERADOS DEL BACKEND ───
+const CATEGORIAS = ["U6", "U8", "U10", "U12", "U14", "U16", "U19", "SENIOR"];
+
+const GENDER_OPTIONS = [
+  { value: "MALE", label: "♂ Masc." },
+  { value: "FEMALE", label: "♀ Fem." },
+  { value: "MIXED", label: "⚥ Mixto" }
+];
+
+const STAFF_ROLES = [
+  { value: "HEAD_COACH", label: "Primer Entrenador" },
+  { value: "ASSISTANT", label: "Segundo Entrenador" },
+  { value: "FITNESS_COACH", label: "Prep. Físico" },
+  { value: "PHYSIOTHERAPIST", label: "Fisioterapeuta" },
+  { value: "DELEGATE", label: "Delegado" },
+  { value: "OTHER", label: "Otro" }
+];
+
+const KINSHIP_TYPES = [
+  { value: "FATHER", label: "Padre" },
+  { value: "MOTHER", label: "Madre" },
+  { value: "LEGAL_GUARDIAN", label: "Tutor Legal" },
+  { value: "OTHER", label: "Otro" }
+];
+
+const PLAYER_POSITIONS = [
+  { value: "GOALKEEPER", label: "Portero/a" },
+  { value: "DEFENDER", label: "Defensa" },
+  { value: "MIDFIELDER", label: "Centrocampista" },
+  { value: "FORWARD", label: "Delantero/a" }
+];
 
 export default function GestionPresidente() {
-  const c = useTheme()
-  const { t } = useTranslation()
+  const c = useTheme();
+  const { activeClubId: clubId, activeSeasonName } = useAuthStore();
+  const seasonLabel = activeSeasonName || "24-25";
 
-  // --- STORE ---
-  const clubId = useAuthStore((state: any) => state.activeClubId)
-  const activeClubName = useAuthStore((state: any) => state.activeClubName)
-  const userId = useAuthStore((state: any) => state.user?.id)
+  const [activeTab, setActiveTab] = useState<Tab>("SOLICITUDES");
 
-  // --- ESTADOS GENERALES ---
-  const [tab, setTab] = useState<Tab>('requests')
-  const [loading, setLoading] = useState(false)
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  // ─── ESTADOS ───
+  const [requests, setRequests] = useState<JoinRequest[]>([]);
+  const [reqLoading, setReqLoading] = useState(false);
+  const [reqPage, setReqPage] = useState(0);
+  const [reqHasMore, setReqHasMore] = useState(true);
 
-  // --- DATOS ---
-  const [solicitudes, setSolicitudes] = useState<any[]>([])
-  const [anuncios, setAnuncios] = useState<any[]>([])
-  const [equipos, setEquipos] = useState<any[]>([])
-  const [temporadas, setTemporadas] = useState<any[]>([])
-  const [cuotas, setCuotas] = useState<any[]>([])
+  const [reviewModal, setReviewModal] = useState(false);
+  const [selectedRequest, setSelectedRequest] = useState<JoinRequest | null>(null);
+  const [reviewDecision, setReviewDecision] = useState<"APPROVED" | "REJECTED">("APPROVED");
+  
+  // Estados para asignaciones
+  const [assignTeamId, setAssignTeamId] = useState<number | null>(null);
+  const [assignStaffRole, setAssignStaffRole] = useState<string>("HEAD_COACH");
+  const [assignKinship, setAssignKinship] = useState<string>("FATHER");
+  const [assignPlayerPosition, setAssignPlayerPosition] = useState<string>("MIDFIELDER");
+  const [assignLinkedPlayerId, setAssignLinkedPlayerId] = useState<number | null>(null);
 
-  // --- TEMPORADA ACTIVA ---
-  const activeSeason = useMemo(() => temporadas.find((s: any) => s.isActive), [temporadas])
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [clubPlayers, setClubPlayers] = useState<any[]>([]); // Jugadores para vincular familiares
 
-  // --- ESTADOS SOLICITUDES ---
-  const [rolesSeleccionados, setRolesSeleccionados] = useState<Record<number, string>>({})
-  const [equiposSeleccionados, setEquiposSeleccionados] = useState<Record<number, number | null>>({})
-  const [jugadoresDisponibles, setJugadoresDisponibles] = useState<Record<number, any[]>>({})
-  const [jugadoresSeleccionados, setJugadoresSeleccionados] = useState<Record<number, number | null>>({})
-  const [parentescosSeleccionados, setParentescosSeleccionados] = useState<Record<number, string>>({})
+  const [fees, setFees] = useState<FeeWithPayments[]>([]);
+  const [feesLoading, setFeesLoading] = useState(false);
+  const [feesPage, setFeesPage] = useState(0);
+  const [feesHasMore, setFeesHasMore] = useState(true);
+  const [expandedFee, setExpandedFee] = useState<number | null>(null);
 
-  // --- ESTADOS MODALES ---
-  const [modalAnuncio, setModalAnuncio] = useState(false)
-  const [modalEquipo, setModalEquipo] = useState(false)
-  const [modalTemporada, setModalTemporada] = useState(false)
-  const [modalCuota, setModalCuota] = useState(false)
-  const [modalDetalleCuota, setModalDetalleCuota] = useState(false)
-  const [cuotaSeleccionada, setCuotaSeleccionada] = useState<any>(null)
-  const [pagosDetalle, setPagosDetalle] = useState<any[]>([])
+  const [createFeeModal, setCreateFeeModal] = useState(false);
+  const [feeForm, setFeeForm] = useState<any>({});
 
-  // --- FORMS ---
-  const [aTitulo, setATitulo] = useState('')
-  const [aContenido, setAContenido] = useState('')
-  const [aTargetTeamId, setATargetTeamId] = useState<number | null>(null)
-  const [aPinned, setAPinned] = useState(false)
+  const [createTeamModal, setCreateTeamModal] = useState(false);
+  const [teamForm, setTeamForm] = useState<any>({ gender: "MALE" });
 
-  const [eCategoria, setECategoria] = useState('U14')
-  const [eGenero, setEGenero] = useState('MALE')
-  const [eSufijo, setESufijo] = useState('')
-
-  const [tNombre, setTNombre] = useState('')
-  const [tInicio, setTInicio] = useState('2025-09-01')
-  const [tFin, setTFin] = useState('2026-06-30')
-
-  const [cConcepto, setCConcepto] = useState('')
-  const [cImporte, setCImporte] = useState('')
-  const [cFecha, setCFecha] = useState('')
-  const [cTargetTeamId, setCTargetTeamId] = useState<number | null>(null)
-
-  // ==========================================
-  // 📥 CARGA DE DATOS
-  // ==========================================
-  const fetchData = useCallback(async () => {
-    if (!clubId) return
-    setLoading(true)
+  // ─── PETICIONES A LA API ───
+  const fetchTeams = useCallback(async () => {
     try {
-      const [resSol, resEquipos, resTemporadas] = await Promise.all([
-        apiFetch(`/api/president/club/${clubId}/requests`),
-        apiFetch(`/api/president/club/${clubId}/teams`),
-        apiFetch(`/api/president/club/${clubId}/seasons`),
-      ])
+      const res = await apiFetch(`/api/teams?clubId=${clubId}`);
+      const data: Team[] = await res.json();
+      setTeams(data);
+    } catch {}
+  }, [clubId]);
 
-      if (resSol.ok) setSolicitudes(await resSol.json())
-      if (resEquipos.ok) setEquipos(await resEquipos.json())
-      
-      let currentActiveSeasonId = null;
+  const fetchClubPlayers = useCallback(async () => {
+    try {
+      // ⚠️ Ajusta el endpoint si en tu backend es distinto para sacar la lista de jugadores
+      const res = await apiFetch(`/api/players?clubId=${clubId}`);
+      const data = await res.json();
+      setClubPlayers(data);
+    } catch {
+      console.log("No se pudieron cargar los jugadores del club.");
+    }
+  }, [clubId]);
 
-      if (resTemporadas.ok) {
-        const temps = await resTemporadas.json()
-        setTemporadas(temps)
-        const active = temps.find((t: any) => t.isActive)
-        if (active) currentActiveSeasonId = active.id;
-      }
-
-      if (currentActiveSeasonId) {
-        const [resAnuncios, resFees] = await Promise.all([
-          apiFetch(`/api/president/club/${clubId}/announcements?seasonId=${currentActiveSeasonId}`),
-          apiFetch(`/api/president/seasons/${currentActiveSeasonId}/fees`)
-        ])
-        if (resAnuncios.ok) setAnuncios(await resAnuncios.json())
-        if (resFees.ok) setCuotas(await resFees.json())
-      } else {
-        setAnuncios([])
-        setCuotas([])
-      }
-    } catch (e) {
-      console.error('Error cargando datos de presidencia', e)
+  const fetchRequests = useCallback(async (page: number) => {
+    setReqLoading(true);
+    try {
+      const res = await apiFetch(`/api/president/requests?clubId=${clubId}&page=${page}&size=15`);
+      const data = await res.json();
+      const items: JoinRequest[] = data.content;
+      setRequests(page === 0 ? items : prev => [...prev, ...items]);
+      setReqHasMore(!data.last);
+      setReqPage(page);
+    } catch {
+      Alert.alert("Error", "No se pudieron cargar las solicitudes.");
     } finally {
-      setLoading(false)
+      setReqLoading(false);
     }
-  }, [clubId])
+  }, [clubId]);
 
-  useEffect(() => { 
-    if (clubId) {
-      fetchData() 
-    }
-  }, [fetchData, clubId])
-
-  // ==========================================
-  // 👥 SOLICITUDES
-  // ==========================================
-  const cargarJugadoresEquipo = async (solicitudId: number, equipoId: number) => {
+  const fetchFees = useCallback(async (page: number) => {
+    setFeesLoading(true);
     try {
-      const res = await apiFetch(`/api/president/club/${clubId}/teams/${equipoId}/players`)
-      if (res.ok) {
-        const jugadores = await res.json()
-        setJugadoresDisponibles(prev => ({ ...prev, [solicitudId]: jugadores }))
-      }
-    } catch (e) {
-      console.error('Error cargando jugadores', e)
+      const res = await apiFetch(`/api/president/fees?clubId=${clubId}&seasonLabel=${seasonLabel}&page=${page}&size=15`);
+      const data = await res.json();
+      const items: FeeWithPayments[] = data.content;
+      setFees(page === 0 ? items : prev => [...prev, ...items]);
+      setFeesHasMore(!data.last);
+      setFeesPage(page);
+    } catch {
+      Alert.alert("Error", "No se pudieron cargar las cuotas.");
+    } finally {
+      setFeesLoading(false);
     }
-  }
+  }, [clubId, seasonLabel]);
 
-  const handleSeleccionarEquipoSolicitud = (solicitudId: number, equipoId: number) => {
-    setEquiposSeleccionados(prev => ({ ...prev, [solicitudId]: equipoId }))
-    setJugadoresSeleccionados(prev => ({ ...prev, [solicitudId]: null }))
-    const rolActual = rolesSeleccionados[solicitudId] || solicitudes.find((s: any) => s.id === solicitudId)?.requestedRole
-    if (rolActual === 'RELATIVE') {
-      cargarJugadoresEquipo(solicitudId, equipoId)
-    }
-  }
+  useEffect(() => { fetchTeams(); fetchClubPlayers(); }, [fetchTeams, fetchClubPlayers]);
 
-  const handleAprobar = async (requestId: number) => {
-    const teamId = equiposSeleccionados[requestId];
-    const role = rolesSeleccionados[requestId] || solicitudes.find((s: any) => s.id === requestId)?.requestedRole;
-    const playerId = jugadoresSeleccionados[requestId];
-    const kinship = parentescosSeleccionados[requestId];
+  useEffect(() => {
+    if (activeTab === "SOLICITUDES") fetchRequests(0);
+    if (activeTab === "CUOTAS") fetchFees(0);
+  }, [activeTab]);
 
-    if (!teamId) {
-      Alert.alert("Atención", "Debes seleccionar un equipo (que se ponga en verde) antes de aprobar.");
-      return; 
-    }
+  // ─── MANEJADORES DE ACCIÓN ───
+  const handleReview = async () => {
+    if (!selectedRequest) return;
 
-    setIsSubmitting(true);
     try {
-      const payload = {
-        role: role,
-        teamId: teamId,
-        playerId: role === 'RELATIVE' ? playerId : null,
-        kinship: role === 'RELATIVE' ? kinship : null
+      const payload: any = {
+        decision: reviewDecision,
       };
 
-      const res = await apiFetch(`/api/president/club/${clubId}/requests/${requestId}/approve`, {
-        method: "PUT",
-        body: JSON.stringify(payload)
-      });
-
-      if (res.ok) {
-        Alert.alert("✅ Fichado", "La solicitud ha sido aprobada correctamente.");
-        fetchData();
-      } else {
-        const errText = await res.text();
-        Alert.alert("Error del servidor", errText || "No se pudo procesar la aprobación.");
+      if (reviewDecision === "APPROVED") {
+        if (selectedRequest.requestedRole === "PLAYER") {
+          payload.teamId = assignTeamId;
+          payload.playerPosition = assignPlayerPosition;
+        } else if (selectedRequest.requestedRole === "COACH") {
+          payload.teamId = assignTeamId;
+          payload.staffRoleType = assignStaffRole;
+        } else if (selectedRequest.requestedRole === "RELATIVE") {
+          payload.linkedPlayerId = assignLinkedPlayerId;
+          payload.kinshipType = assignKinship;
+        }
       }
-    } catch (e) {
-      Alert.alert("Error", "Fallo de conexión. Revisa tu internet o la consola.");
-    } finally {
-      setIsSubmitting(false);
+
+      await apiFetch(`/api/president/requests/${selectedRequest.id}?clubId=${clubId}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+      
+      setReviewModal(false);
+      setRequests(prev => prev.filter(r => r.id !== selectedRequest.id));
+      Alert.alert("Éxito", "Solicitud procesada correctamente.");
+    } catch {
+      Alert.alert("Error", "No se pudo procesar la solicitud.");
     }
   };
 
-  const handleRechazar = async (solicitudId: number) => {
-    setIsSubmitting(true)
-    try {
-      const res = await apiFetch(`/api/president/club/${clubId}/requests/${solicitudId}/reject`, {
-        method: 'PUT',
-      })
-      if (res.ok) {
-        setSolicitudes(prev => prev.filter((s: any) => s.id !== solicitudId))
-      } else {
-        Alert.alert('Error', 'No se pudo rechazar la solicitud.')
-      }
-    } catch (e) {
-      Alert.alert('Error', 'Fallo al rechazar.')
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
-  // ==========================================
-  // 📢 ANUNCIOS
-  // ==========================================
-  const publishAnuncio = async () => {
-    if (!aTitulo || !aContenido) return;
-    
-    // 🟢 Aseguramos obtener el ID de la temporada activa a toda costa
-    const sId = activeSeason?.id || temporadas.find((t: any) => t.isActive)?.id;
-
-    if (!sId) {
-      Alert.alert('Error', 'Debes tener una temporada activa seleccionada para publicar anuncios.');
+  const handleCreateFee = async () => {
+    if (!feeForm.teamId || !feeForm.concept || !feeForm.amount || !feeForm.dueDate) {
+      Alert.alert("Atención", "Rellena todos los campos para crear la cuota (Equipo, Concepto, Importe y Fecha).");
       return;
     }
-
-    const payload = {
-      title: aTitulo,
-      content: aContenido,
-      teamId: aTargetTeamId,
-      clubId: clubId,
-      seasonId: Number(sId), // 👈 Aseguramos que es un número válido
-      isPinned: aPinned,
-    };
-    
-    console.log("📤 [Anuncios] Enviando payload:", payload);
-
-    setIsSubmitting(true)
     try {
-      const res = await apiFetch(`/api/president/announcements?userId=${userId}`, {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      })
-
-      if (res.ok) {
-        setModalAnuncio(false)
-        setATitulo(''); setAContenido(''); setAPinned(false); setATargetTeamId(null)
-        fetchData()
-        if (Platform.OS !== 'web') Alert.alert('✅ Éxito', 'Anuncio publicado en el tablón')
-      } else {
-        const errorText = await res.text();
-        console.error("❌ Error backend:", errorText);
-        Alert.alert('Error', `No se pudo publicar. Status: ${res.status}`);
-      }
-    } catch (e) {
-      console.error("💥 Error de red:", e);
-      Alert.alert('Error', 'Fallo de conexión al publicar anuncio.');
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
-  const handleEliminarAnuncio = async (id: number) => {
-    const ejecutarBorrado = async () => {
-      try {
-        await apiFetch(`/api/president/announcements/${id}`, { method: 'DELETE' })
-        setAnuncios(prev => prev.filter((a: any) => a.id !== id))
-      } catch (e) {
-        Alert.alert('Error', 'No se pudo eliminar el anuncio.')
-      }
-    }
-
-    if (Platform.OS === 'web') {
-      if (window.confirm("¿Seguro que quieres borrar este anuncio?")) ejecutarBorrado();
-    } else {
-      Alert.alert("Eliminar", "¿Seguro que quieres borrar este anuncio?", [
-        { text: "Cancelar", style: "cancel" },
-        { text: "Borrar", style: "destructive", onPress: ejecutarBorrado }
-      ]);
-    }
-  }
-
-  // ==========================================
-  // 💶 CUOTAS
-  // ==========================================
-  const handleCrearCuota = async () => {
-    const sId = activeSeason?.id || temporadas.find((t: any) => t.isActive)?.id;
-    if (!sId) return Alert.alert('Error', 'No hay temporada activa.')
-    if (!cConcepto || !cImporte || !cFecha) return
-
-    let fechaFormateada = cFecha;
-    if (cFecha.includes('/')) {
-      const [dia, mes, anio] = cFecha.split('/');
-      fechaFormateada = `${anio}-${mes}-${dia}`;
-    }
-
-    const payload = {
-      concept: cConcepto,
-      amount: parseFloat(cImporte),
-      dueDate: fechaFormateada, 
-      teamId: cTargetTeamId,
-      seasonId: Number(sId),
-    };
-    
-    setIsSubmitting(true)
-    try {
-      const res = await apiFetch(`/api/president/club/${clubId}/fees`, {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      })
-
-      if (res.ok) {
-        setModalCuota(false)
-        setCConcepto(''); setCImporte(''); setCFecha(''); setCTargetTeamId(null)
-        fetchData()
-        if (Platform.OS !== 'web') Alert.alert('✅ Éxito', 'Cuota creada correctamente')
-      } else {
-        Alert.alert('Error del Servidor', `No se pudo crear. Status: ${res.status}`);
-      }
-    } catch (e) {
-      Alert.alert('Error', 'Fallo al conectar con el servidor.')
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
-  const abrirDetalleCuota = async (cuota: any) => {
-    setCuotaSeleccionada(cuota)
-    setModalDetalleCuota(true)
-    try {
-      const res = await apiFetch(`/api/president/fees/${cuota.id}/payments`)
-      if (res.ok) setPagosDetalle(await res.json())
-    } catch (e) {
-      console.error('Error cargando pagos', e)
-    }
-  }
-
-  const marcarPagado = async (pagoId: number) => {
-    try {
-      const res = await apiFetch(`/api/president/payments/${pagoId}/pay`, { method: 'PUT' })
-      if (res.ok) {
-        setPagosDetalle(prev => prev.map((p: any) =>
-          p.id === pagoId ? { ...p, status: 'PAID', paidDate: new Date().toLocaleDateString('es') } : p
-        ))
-      }
-    } catch (e) {
-      Alert.alert('Error', 'No se pudo marcar como pagado.')
-    }
-  }
-
-  // ==========================================
-  // 🗓️ TEMPORADAS
-  // ==========================================
-  // Al principio del componente, importa la nueva acción:
-  const updateActiveSeason = useAuthStore((state: any) => state.updateActiveSeason)
-
-  // Luego sustituye handleToggleSeason por esto:
-  const handleToggleSeason = async (id: number) => {
-    const temporada = temporadas.find((t: any) => t.id === id)
-    if (temporada?.isActive) return Alert.alert('Atención', 'No puedes desactivar una temporada directamente. Activa otra para desactivar esta.')
-
-    setTemporadas(prev => prev.map((t: any) => ({
-      ...t,
-      isActive: t.id === id,
-    })))
-
-    try {
-      await apiFetch(`/api/president/seasons/${id}/toggle`, { method: 'PATCH' })
-      
-      // 🟢 ESTO ES LO QUE FALTABA: actualizar el Store global
-      updateActiveSeason(temporada.id, temporada.name)
-      
-      fetchData()
-    } catch (e) {
-      Alert.alert('Error', 'No se pudo cambiar el estado de la temporada.')
-      fetchData()
-    }
-  }
-
-  const saveTemporada = async () => {
-    if (!tNombre || !tInicio || !tFin) return
-    setIsSubmitting(true)
-    try {
-      const res = await apiFetch(`/api/president/club/${clubId}/seasons`, {
-        method: 'POST',
-        body: JSON.stringify({ name: tNombre, startDate: tInicio, endDate: tFin }),
-      })
-      if (res.ok) {
-        setModalTemporada(false)
-        setTNombre(''); setTInicio(''); setTFin('')
-        fetchData()
-      }
-    } catch (e) {
-      Alert.alert('Error', 'Fallo al crear temporada.')
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
-  // ==========================================
-  // 👕 EQUIPOS
-  // ==========================================
-  const saveEquipo = async () => {
-    const sId = activeSeason?.id || temporadas.find((t: any) => t.isActive)?.id;
-    if (!sId) return Alert.alert('Atención', 'Debes tener una temporada activa para crear equipos.')
-    if (!eSufijo) return
-    
-    setIsSubmitting(true)
-    try {
-      const res = await apiFetch(`/api/president/club/${clubId}/teams`, {
-        method: 'POST',
+      const res = await apiFetch(`/api/president/fees?clubId=${clubId}`, {
+        method: "POST",
         body: JSON.stringify({
-          category: eCategoria,
-          gender: eGenero,
-          suffix: eSufijo,
-          seasonId: Number(sId),
+          teamId: Number(feeForm.teamId),
+          concept: feeForm.concept,
+          amount: parseFloat(feeForm.amount),
+          dueDate: feeForm.dueDate,
         }),
-      })
-      if (res.ok) {
-        setModalEquipo(false)
-        setESufijo('')
-        fetchData()
-      }
-    } catch (e) {
-      Alert.alert('Error', 'Fallo al crear equipo.')
-    } finally {
-      setIsSubmitting(false)
+      });
+      const data: FeeWithPayments = await res.json();
+      setFees(prev => [data, ...prev]);
+      setCreateFeeModal(false);
+      setFeeForm({});
+      Alert.alert("Cuota creada", "Cuota generada y asignada a los jugadores.");
+    } catch {
+      Alert.alert("Error", "Hubo un problema al crear la cuota. Verifica que el formato de fecha sea YYYY-MM-DD.");
     }
-  }
+  };
 
-  const equiposTemporadaActiva = useMemo(
-    () => equipos.filter((e: any) => e.seasonId === activeSeason?.id),
-    [equipos, activeSeason]
-  )
+  const handlePaymentStatus = async (paymentId: number, feeId: number, status: PaymentItem["status"]) => {
+    try {
+      await apiFetch(`/api/president/payments/${paymentId}?clubId=${clubId}`, {
+        method: "PATCH", body: JSON.stringify({ status }) 
+      });
+      setFees(prev => prev.map(f =>
+        f.feeId !== feeId ? f : {
+          ...f,
+          payments: f.payments.map(p => p.paymentId !== paymentId ? p : { ...p, status }),
+        }
+      ));
+    } catch {
+      Alert.alert("Error", "No se pudo actualizar el pago.");
+    }
+  };
 
-  // ==========================================
-  // 🎨 RENDER
-  // ==========================================
-  return (
-    <View style={[styles.wrapper, { backgroundColor: c.fondo }]}>
-      <View style={[styles.headerFixed, { backgroundColor: c.fondo, borderBottomColor: c.bordeInput }]}>
-        <Text style={[styles.titulo, { color: c.texto }]}>
-          👑 Presidencia
-          {solicitudes.length > 0 && (
-            <Text style={{ color: '#f59e0b' }}> · {solicitudes.length} pendientes</Text>
-          )}
-        </Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={styles.tabsRow}>
-            {([
-              { key: 'requests', label: `Solicitudes${solicitudes.length > 0 ? ` (${solicitudes.length})` : ''}` },
-              { key: 'board', label: 'Tablón' },
-              { key: 'fees', label: 'Cuotas' },
-              { key: 'club', label: 'Mi Club' },
-            ] as { key: Tab; label: string }[]).map(item => (
-              <TouchableOpacity
-                key={item.key}
-                style={[styles.tabButton, tab === item.key && { borderBottomColor: c.boton, borderBottomWidth: 2 }]}
-                onPress={() => setTab(item.key)}
-              >
-                <Text style={[styles.tabText, { color: tab === item.key ? c.boton : c.subtexto }]}>
-                  {item.label}
+  const handleCreateTeam = async () => {
+    if (!teamForm.category || !teamForm.gender || !teamForm.suffix) {
+      Alert.alert("Atención", "Selecciona categoría, género y escribe un sufijo.");
+      return;
+    }
+    try {
+      const res = await apiFetch(`/api/president/teams?clubId=${clubId}&seasonLabel=${seasonLabel}`, {
+        method: "POST",
+        body: JSON.stringify({
+          category: teamForm.category,
+          gender: teamForm.gender,
+          suffix: teamForm.suffix,
+        }),
+      });
+      const data: Team = await res.json();
+      setTeams(prev => [...prev, data]);
+      setCreateTeamModal(false);
+      setTeamForm({ gender: "MALE" });
+      Alert.alert("Equipo creado", "El equipo ha sido registrado exitosamente.");
+    } catch {
+      Alert.alert("Error", "No se pudo crear el equipo. Verifica los datos.");
+    }
+  };
+
+  const handleDeleteTeam = (teamId: number) => {
+    Alert.alert(
+      "Eliminar Equipo", 
+      "¿Estás seguro? El sistema bloqueará el borrado si este equipo tiene datos vinculados.", 
+      [
+        { text: "Cancelar", style: "cancel" },
+        { 
+          text: "Eliminar", 
+          style: "destructive", 
+          onPress: async () => {
+            try {
+              const res = await apiFetch(`/api/president/teams/${teamId}?clubId=${clubId}`, { method: "DELETE" });
+              if (res.ok) {
+                setTeams(prev => prev.filter(t => t.id !== teamId));
+                Alert.alert("Eliminado", "El equipo ha sido eliminado correctamente.");
+              }
+            } catch {
+              Alert.alert("No se pudo eliminar", "El equipo tiene datos vinculados (jugadores, eventos, cuotas).");
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const formatRequestTitle = (req: JoinRequest) => {
+    let roleStr = req.requestedRole;
+    if (roleStr === "PLAYER") roleStr = "Jugador";
+    else if (roleStr === "COACH") roleStr = "Entrenador";
+    else if (roleStr === "RELATIVE") roleStr = "Familiar";
+
+    return `${req.userFullName} - ${roleStr}`;
+  };
+
+  // ─── RENDERIZADOS DE TABS ───
+  const renderSolicitudesTab = () => (
+    <View>
+      {reqLoading && requests.length === 0 ? (
+        <ActivityIndicator style={{ marginTop: 40 }} color={c.boton} />
+      ) : (
+        <FlatList
+          data={requests}
+          keyExtractor={r => String(r.id)}
+          scrollEnabled={false}
+          ListEmptyComponent={
+            <View style={[styles.card, { backgroundColor: c.input, borderStyle: 'dashed', borderColor: c.bordeInput }]}>
+              <Text style={{ textAlign: "center", color: c.subtexto }}>No hay solicitudes pendientes.</Text>
+            </View>
+          }
+          onEndReached={() => { if (reqHasMore) fetchRequests(reqPage + 1); }}
+          onEndReachedThreshold={0.4}
+          renderItem={({ item }) => (
+            <View style={[styles.card, { backgroundColor: c.input, borderColor: c.bordeInput }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.cardTitle, { color: c.texto }]}>
+                  {formatRequestTitle(item)}
                 </Text>
-              </TouchableOpacity>
-            ))}
+                <Text style={{ fontSize: 13, color: c.subtexto, marginTop: 4 }}>📧 {item.userEmail}</Text>
+                {item.message && (
+                  <Text style={{ fontSize: 13, color: c.subtexto, fontStyle: "italic", marginTop: 6, backgroundColor: c.fondo, padding: 8, borderRadius: 8 }}>
+                    💬 "{item.message}"
+                  </Text>
+                )}
+              </View>
+              <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
+                <TouchableOpacity
+                  style={[styles.btnAction, { backgroundColor: "#DCFCE7", borderColor: "#16A34A" }]}
+                  onPress={() => {
+                    setSelectedRequest(item);
+                    setReviewDecision("APPROVED");
+                    setAssignTeamId(null);
+                    setReviewModal(true);
+                  }}
+                >
+                  <Text style={{ color: "#16A34A", fontWeight: "bold" }}>Aprobar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.btnAction, { backgroundColor: "#FEE2E2", borderColor: "#DC2626" }]}
+                  onPress={() => {
+                    setSelectedRequest(item);
+                    setReviewDecision("REJECTED");
+                    setReviewModal(true);
+                  }}
+                >
+                  <Text style={{ color: "#DC2626", fontWeight: "bold" }}>Rechazar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        />
+      )}
+    </View>
+  );
+
+  const renderCuotasTab = () => (
+    <View>
+      <TouchableOpacity style={[styles.btnMain, { backgroundColor: c.boton }]} onPress={() => setCreateFeeModal(true)}>
+        <Text style={{ color: "white", fontWeight: "bold" }}>+ Nueva cuota</Text>
+      </TouchableOpacity>
+
+      {feesLoading && fees.length === 0 ? (
+        <ActivityIndicator style={{ marginTop: 40 }} color={c.boton} />
+      ) : (
+        <FlatList
+          data={fees}
+          keyExtractor={f => String(f.feeId)}
+          scrollEnabled={false}
+          ListEmptyComponent={
+            <View style={[styles.card, { backgroundColor: c.input, borderStyle: 'dashed', borderColor: c.bordeInput }]}>
+              <Text style={{ textAlign: "center", color: c.subtexto }}>No hay cuotas esta temporada.</Text>
+            </View>
+          }
+          onEndReached={() => { if (feesHasMore) fetchFees(feesPage + 1); }}
+          onEndReachedThreshold={0.4}
+          renderItem={({ item }) => {
+            const paidCount = item.payments.filter(p => p.status === "PAID").length;
+            const isExpanded = expandedFee === item.feeId;
+            return (
+              <View style={[styles.card, { backgroundColor: c.input, borderColor: c.bordeInput, padding: 0, overflow: 'hidden' }]}>
+                <TouchableOpacity onPress={() => setExpandedFee(isExpanded ? null : item.feeId)} style={{ padding: 16 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.cardTitle, { color: c.texto }]}>{item.concept}</Text>
+                      <Text style={{ fontSize: 22, fontWeight: "800", color: c.boton, marginTop: 4 }}>€{item.amount.toFixed(2)}</Text>
+                      <Text style={{ fontSize: 13, color: c.subtexto, marginTop: 4 }}>📅 Vence: {item.dueDate}</Text>
+                    </View>
+                    <View style={{ alignItems: "center", backgroundColor: c.fondo, padding: 10, borderRadius: 12 }}>
+                      <Text style={{ fontSize: 18, fontWeight: "bold", color: c.texto }}>{paidCount}/{item.payments.length}</Text>
+                      <Text style={{ fontSize: 10, color: c.subtexto, textTransform: 'uppercase' }}>Pagados</Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+
+                {isExpanded && (
+                  <View style={{ borderTopWidth: 1, borderTopColor: c.bordeInput, backgroundColor: c.fondo, padding: 16 }}>
+                    {item.payments.map(p => (
+                      <View key={p.paymentId} style={{ flexDirection: "row", alignItems: "center", paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: c.input }}>
+                        <Text style={{ flex: 1, fontSize: 14, color: c.texto, fontWeight: '500' }} numberOfLines={1}>👤 {p.playerName}</Text>
+                        <View style={{ flexDirection: "row", gap: 6 }}>
+                          {(["PENDING","PAID","OVERDUE"] as const).map(st => (
+                            <TouchableOpacity
+                              key={st}
+                              style={[
+                                styles.chipSmall, 
+                                p.status === st 
+                                  ? (st === "PAID" ? {backgroundColor: "#DCFCE7"} : st === "OVERDUE" ? {backgroundColor: "#FEE2E2"} : {backgroundColor: "#FEF3C7"}) 
+                                  : { backgroundColor: c.input, borderWidth: 1, borderColor: c.bordeInput }
+                              ]}
+                              onPress={() => handlePaymentStatus(p.paymentId, item.feeId, st)}
+                            >
+                              <Text style={{ fontSize: 11, fontWeight: p.status === st ? "bold" : "600", color: p.status === st ? "black" : c.subtexto }}>
+                                {st === "PENDING" ? "Pendiente" : st === "PAID" ? "Pagado" : "Vencido"}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            );
+          }}
+        />
+      )}
+    </View>
+  );
+
+  const renderEquiposTab = () => (
+    <View>
+      <TouchableOpacity style={[styles.btnMain, { backgroundColor: c.boton }]} onPress={() => setCreateTeamModal(true)}>
+        <Text style={{ color: "white", fontWeight: "bold", fontSize: 16 }}>+ Crear nuevo equipo</Text>
+      </TouchableOpacity>
+      
+      {teams.length === 0 && !reqLoading && (
+        <View style={[styles.card, { backgroundColor: c.input, borderStyle: 'dashed', borderColor: c.bordeInput }]}>
+          <Text style={{ textAlign: "center", color: c.subtexto }}>Aún no has creado ningún equipo.</Text>
+        </View>
+      )}
+
+      {teams.map(t => (
+        <View key={t.id} style={[styles.card, { backgroundColor: c.input, borderColor: c.bordeInput, flexDirection: "row", alignItems: "center", gap: 12 }]}>
+          <View style={{ width: 50, height: 50, borderRadius: 14, backgroundColor: `${c.boton}20`, alignItems: "center", justifyContent: "center" }}>
+            <Text style={{ fontSize: 24 }}>🏆</Text>
           </View>
-        </ScrollView>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.cardTitle, { color: c.texto }]}>{t.category} {t.gender} {t.suffix}</Text>
+            <Text style={{ fontSize: 13, color: c.subtexto, marginTop: 4 }}>Temporada {t.seasonLabel}</Text>
+          </View>
+          <TouchableOpacity onPress={() => handleDeleteTeam(t.id)} style={{ padding: 10, backgroundColor: "#FEE2E2", borderRadius: 10 }}>
+            <Text style={{ fontSize: 18, color: "#DC2626" }}>🗑️</Text>
+          </TouchableOpacity>
+        </View>
+      ))}
+    </View>
+  );
+
+  return (
+    <View style={[{ flex: 1 }, { backgroundColor: c.fondo }]}>
+      
+      <View style={{ padding: 24, paddingTop: 60, paddingBottom: 10 }}>
+        <Text style={{ fontSize: 14, fontWeight: "600", color: c.subtexto, marginBottom: 5 }}>Temporada {seasonLabel}</Text>
+        <Text style={{ fontSize: 28, fontWeight: "bold", color: c.texto }}>Administración</Text>
       </View>
 
-      <ScrollView
-        contentContainerStyle={styles.container}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={fetchData} tintColor={c.boton} />}
-      >
+      <View style={{ flexDirection: "row", paddingHorizontal: 16, marginBottom: 15 }}>
+        {(["SOLICITUDES","CUOTAS","EQUIPOS"] as Tab[]).map(tab => (
+          <TouchableOpacity
+            key={tab}
+            style={[{ flex: 1, paddingVertical: 14, alignItems: "center", borderBottomWidth: 3 }, activeTab === tab ? { borderBottomColor: c.boton } : { borderBottomColor: "transparent" }]}
+            onPress={() => setActiveTab(tab)}
+          >
+            <Text style={[{ fontSize: 13, fontWeight: "bold" }, activeTab === tab ? { color: c.texto } : { color: c.subtexto }]}>
+              {tab === "SOLICITUDES" ? "📩 Peticiones" : tab === "CUOTAS" ? "💳 Cuotas" : "🏆 Equipos"}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
 
-        {tab === 'requests' && (
-          <View>
-            {solicitudes.length === 0 ? (
-              <View style={[styles.emptyCard, { backgroundColor: c.input, borderColor: c.bordeInput }]}>
-                <Text style={[styles.emptyText, { color: c.subtexto }]}>✅ No hay solicitudes pendientes</Text>
-              </View>
-            ) : (
-              solicitudes.map((s: any) => {
-                const rolActual = rolesSeleccionados[s.id] || s.requestedRole
-                const equipoActualId = equiposSeleccionados[s.id] ?? null
-                const esRelative = rolActual === 'RELATIVE'
-                const jugadores = jugadoresDisponibles[s.id] || []
-
-                return (
-                  <View key={s.id} style={[styles.requestCard, { backgroundColor: c.input, borderColor: c.bordeInput }]}>
-                    <View style={styles.requestHeader}>
-                      <View style={[styles.avatar, { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` }]}>
-                        <Text style={[styles.avatarText, { color: c.boton }]}>{s.firstName?.charAt(0)}</Text>
-                      </View>
-                      <View style={styles.requestInfo}>
-                        <Text style={[styles.requestNombre, { color: c.texto }]}>{s.firstName} {s.lastName}</Text>
-                        <Text style={[styles.requestRolReq, { color: c.subtexto }]}>Quiere unirse como: {s.requestedRole}</Text>
-                      </View>
-                    </View>
-
-                    {s.message && (
-                      <View style={[styles.mensajeBox, { backgroundColor: c.fondo, borderColor: c.bordeInput }]}>
-                        <Text style={[styles.mensajeText, { color: c.subtexto }]}>"{s.message}"</Text>
-                      </View>
-                    )}
-
-                    <Text style={[styles.selectLabel, { color: c.subtexto }]}>Rol</Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-                      <View style={styles.chipsRow}>
-                        {ROLES.map(rol => (
-                          <TouchableOpacity
-                            key={rol}
-                            style={[styles.chip, {
-                              backgroundColor: rolActual === rol ? `${c.boton}18` : c.fondo,
-                              borderColor: rolActual === rol ? c.boton : c.bordeInput,
-                            }]}
-                            onPress={() => setRolesSeleccionados(prev => ({ ...prev, [s.id]: rol }))}
-                          >
-                            <Text style={[styles.chipText, { color: rolActual === rol ? c.boton : c.subtexto }]}>{rol}</Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    </ScrollView>
-
-                    <Text style={[styles.selectLabel, { color: c.subtexto }]}>Equipo</Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-                      <View style={styles.chipsRow}>
-                        {equiposTemporadaActiva.map((eq: any) => (
-                          <TouchableOpacity
-                            key={eq.id}
-                            style={[styles.chip, {
-                              backgroundColor: equipoActualId === eq.id ? `${c.boton}18` : c.fondo,
-                              borderColor: equipoActualId === eq.id ? c.boton : c.bordeInput,
-                            }]}
-                            onPress={() => handleSeleccionarEquipoSolicitud(s.id, eq.id)}
-                          >
-                            <Text style={[styles.chipText, { color: equipoActualId === eq.id ? c.boton : c.subtexto }]}>
-                              {eq.category} {eq.suffix}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    </ScrollView>
-
-                    {esRelative && equipoActualId && (
-                      <>
-                        <Text style={[styles.selectLabel, { color: c.subtexto }]}>Jugador familiar</Text>
-                        <View style={[styles.jugadoresList, { borderColor: c.bordeInput }]}>
-                          {jugadores.length === 0 ? (
-                            <Text style={[styles.emptyText, { color: c.subtexto, padding: 10 }]}>Cargando jugadores...</Text>
-                          ) : (
-                            jugadores.map((jug: any) => {
-                              const seleccionado = jugadoresSeleccionados[s.id] === jug.id
-                              return (
-                                <TouchableOpacity
-                                  key={jug.id}
-                                  style={[
-                                    styles.jugadorRow,
-                                    { borderBottomColor: c.bordeInput },
-                                    seleccionado && { backgroundColor: `${c.boton}08` },
-                                  ]}
-                                  onPress={() => setJugadoresSeleccionados(prev => ({ ...prev, [s.id]: jug.id }))}
-                                >
-                                  <View style={[styles.jugAvatar, { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` }]}>
-                                    <Text style={[styles.jugAvatarText, { color: c.boton }]}>{jug.firstName?.charAt(0)}</Text>
-                                  </View>
-                                  <Text style={[styles.jugNombre, { color: c.texto }]}>{jug.firstName} {jug.lastName}</Text>
-                                  <Text style={[styles.jugDorsal, { color: c.subtexto }]}>#{jug.jerseyNumber}</Text>
-                                  {seleccionado && <Text style={{ color: c.boton, fontSize: 16 }}>✓</Text>}
-                                </TouchableOpacity>
-                              )
-                            })
-                          )}
-                        </View>
-
-                        {jugadoresSeleccionados[s.id] && (
-                          <>
-                            <Text style={[styles.selectLabel, { color: c.subtexto, marginTop: 10 }]}>Parentesco</Text>
-                            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-                              <View style={styles.chipsRow}>
-                                {PARENTESCOS.map(par => (
-                                  <TouchableOpacity
-                                    key={par}
-                                    style={[styles.chip, {
-                                      backgroundColor: parentescosSeleccionados[s.id] === par ? `${c.boton}18` : c.fondo,
-                                      borderColor: parentescosSeleccionados[s.id] === par ? c.boton : c.bordeInput,
-                                    }]}
-                                    onPress={() => setParentescosSeleccionados(prev => ({ ...prev, [s.id]: par }))}
-                                  >
-                                    <Text style={[styles.chipText, { color: parentescosSeleccionados[s.id] === par ? c.boton : c.subtexto }]}>{par}</Text>
-                                  </TouchableOpacity>
-                                ))}
-                              </View>
-                            </ScrollView>
-                          </>
-                        )}
-                      </>
-                    )}
-
-                    <View style={styles.actionsRow}>
-                      <TouchableOpacity
-                        style={[styles.aprobarBtn, { backgroundColor: c.boton, opacity: isSubmitting ? 0.6 : 1 }]}
-                        onPress={() => handleAprobar(s.id)}
-                        disabled={isSubmitting}
-                      >
-                        {isSubmitting
-                          ? <ActivityIndicator color="#fff" size="small" />
-                          : <Text style={styles.actionBtnText}>✓ Aprobar</Text>
-                        }
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.rechazarBtn, { borderColor: '#ef444440', backgroundColor: '#ef444410' }]}
-                        onPress={() => handleRechazar(s.id)}
-                        disabled={isSubmitting}
-                      >
-                        <Text style={[styles.actionBtnText, { color: '#ef4444' }]}>✗ Rechazar</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                )
-              })
-            )}
-          </View>
-        )}
-
-        {tab === 'board' && (
-          <View>
-            <TouchableOpacity style={[styles.primaryButton, { backgroundColor: c.boton }]} onPress={() => setModalAnuncio(true)}>
-              <Text style={[styles.primaryButtonText, { color: '#fff' }]}>+ Nuevo anuncio</Text>
-            </TouchableOpacity>
-
-            {anuncios.length === 0 ? (
-              <View style={[styles.emptyCard, { backgroundColor: c.input, borderColor: c.bordeInput }]}>
-                <Text style={[styles.emptyText, { color: c.subtexto }]}>No hay anuncios publicados</Text>
-              </View>
-            ) : (
-              anuncios.map((a: any) => (
-                <View key={a.id} style={[styles.anuncioCard, {
-                  backgroundColor: c.input,
-                  borderColor: a.isPinned ? `${c.boton}60` : c.bordeInput,
-                  borderWidth: a.isPinned ? 1.5 : 1,
-                }]}>
-                  <View style={styles.anuncioHeader}>
-                    <View style={styles.anuncioBadges}>
-                      {a.isPinned && (
-                        <View style={[styles.badge, { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` }]}>
-                          <Text style={[styles.badgeText, { color: c.boton }]}>📌 Fijado</Text>
-                        </View>
-                      )}
-                      <View style={[styles.badge, {
-                        backgroundColor: a.teamId ? '#3b82f618' : '#f59e0b18',
-                        borderColor: a.teamId ? '#3b82f635' : '#f59e0b35',
-                      }]}>
-                        <Text style={[styles.badgeText, { color: a.teamId ? '#3b82f6' : '#f59e0b' }]}>
-                          {a.teamId ? `👕 ${a.teamName || 'Equipo'}` : '🏆 Todo el club'}
-                        </Text>
-                      </View>
-                    </View>
-                    <TouchableOpacity
-                      style={[styles.iconBtn, { borderColor: '#ef444435', backgroundColor: '#ef444410' }]}
-                      onPress={() => handleEliminarAnuncio(a.id)}
-                    >
-                      <Text style={styles.iconBtnText}>🗑️</Text>
-                    </TouchableOpacity>
-                  </View>
-                  <Text style={[styles.anuncioTitulo, { color: c.texto }]}>{a.titulo || a.title}</Text>
-                  <Text style={[styles.anuncioContenido, { color: c.subtexto }]} numberOfLines={2}>{a.contenido || a.content}</Text>
-                  <View style={styles.anuncioFooter}>
-                    <Text style={[styles.anuncioMeta, { color: c.subtexto }]}>✍️ {a.autorNombre || 'Presidente'}</Text>
-                    <Text style={[styles.anuncioMeta, { color: c.subtexto }]}>{a.publishedAt || a.fecha}</Text>
-                  </View>
-                </View>
-              ))
-            )}
-          </View>
-        )}
-
-        {tab === 'fees' && (
-          <View>
-            {!activeSeason ? (
-              <View style={[styles.emptyCard, { backgroundColor: '#f59e0b18', borderColor: '#f59e0b35' }]}>
-                <Text style={[styles.emptyText, { color: '#f59e0b' }]}>⚠️ Activa una temporada para gestionar cuotas</Text>
-              </View>
-            ) : (
-              <>
-                <TouchableOpacity style={[styles.primaryButton, { backgroundColor: c.boton }]} onPress={() => setModalCuota(true)}>
-                  <Text style={[styles.primaryButtonText, { color: '#fff' }]}>+ Nueva cuota</Text>
-                </TouchableOpacity>
-
-                {cuotas.length === 0 ? (
-                  <View style={[styles.emptyCard, { backgroundColor: c.input, borderColor: c.bordeInput }]}>
-                    <Text style={[styles.emptyText, { color: c.subtexto }]}>No hay cuotas creadas</Text>
-                  </View>
-                ) : (
-                  cuotas.map((cuota: any) => (
-                    <View key={cuota.id} style={[styles.cuotaCard, { backgroundColor: c.input, borderColor: c.bordeInput }]}>
-                      <View style={styles.cuotaHeader}>
-                        <Text style={[styles.cuotaTitulo, { color: c.texto }]}>{cuota.concept}</Text>
-                        <Text style={[styles.cuotaImporte, { color: c.boton }]}>{cuota.amount}€</Text>
-                      </View>
-                      <View style={styles.cuotaMetaRow}>
-                        <Text style={[styles.cuotaMetaText, { color: c.subtexto }]}>Vence {cuota.dueDate}</Text>
-                        <View style={[styles.badge, {
-                          backgroundColor: cuota.teamId ? '#3b82f618' : '#f59e0b18',
-                          borderColor: cuota.teamId ? '#3b82f635' : '#f59e0b35',
-                        }]}>
-                          <Text style={[styles.badgeText, { color: cuota.teamId ? '#3b82f6' : '#f59e0b' }]}>
-                            {cuota.teamId ? `👕 ${cuota.teamName || 'Equipo'}` : '🏆 Todo el club'}
-                          </Text>
-                        </View>
-                      </View>
-                      <View style={styles.cuotaStats}>
-                        <View style={[styles.statPill, { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` }]}>
-                          <Text style={[styles.statText, { color: c.boton }]}>✅ {cuota.paidCount || 0} pagados</Text>
-                        </View>
-                        <View style={[styles.statPill, { backgroundColor: '#f59e0b18', borderColor: '#f59e0b35' }]}>
-                          <Text style={[styles.statText, { color: '#f59e0b' }]}>⏳ {cuota.pendingCount || 0} pendientes</Text>
-                        </View>
-                        <View style={[styles.statPill, { backgroundColor: '#ef444418', borderColor: '#ef444435' }]}>
-                          <Text style={[styles.statText, { color: '#ef4444' }]}>❌ {cuota.overdueCount || 0} vencidos</Text>
-                        </View>
-                      </View>
-                      <TouchableOpacity
-                        style={[styles.verDetalleBtn, { borderColor: c.bordeInput }]}
-                        onPress={() => abrirDetalleCuota(cuota)}
-                      >
-                        <Text style={[styles.verDetalleText, { color: c.subtexto }]}>Ver detalle →</Text>
-                      </TouchableOpacity>
-                    </View>
-                  ))
-                )}
-              </>
-            )}
-          </View>
-        )}
-
-        {tab === 'club' && (
-          <View>
-            <Text style={[styles.subSectionTitle, { color: c.texto }]}>🏆 {activeClubName}</Text>
-
-            <View style={styles.subSectionHeader}>
-              <Text style={[styles.subSectionTitle, { color: c.texto, marginBottom: 0 }]}>🗓 Temporadas</Text>
-              <TouchableOpacity
-                style={[styles.smallBtn, { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` }]}
-                onPress={() => setModalTemporada(true)}
-              >
-                <Text style={[styles.smallBtnText, { color: c.boton }]}>+ Nueva</Text>
-              </TouchableOpacity>
-            </View>
-
-            {temporadas.length === 0 ? (
-              <View style={[styles.emptyCard, { backgroundColor: c.input, borderColor: c.bordeInput, marginBottom: 20 }]}>
-                <Text style={[styles.emptyText, { color: c.subtexto }]}>No hay temporadas creadas</Text>
-              </View>
-            ) : (
-              <View style={[styles.list, { marginBottom: 24 }]}>
-                {temporadas.map((temp: any) => (
-                  <View key={temp.id} style={[styles.equipoCard, {
-                    backgroundColor: c.input,
-                    borderColor: temp.isActive ? c.boton : c.bordeInput,
-                    borderWidth: temp.isActive ? 1.5 : 1,
-                  }]}>
-                    <View style={styles.equipoInfo}>
-                      <Text style={[styles.equipoNombre, { color: c.texto }]}>{temp.name}</Text>
-                      {temp.isActive && (
-                        <View style={[styles.badge, { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` }]}>
-                          <Text style={[styles.badgeText, { color: c.boton }]}>✅ Activa</Text>
-                        </View>
-                      )}
-                    </View>
-                    <Switch
-                      value={temp.isActive}
-                      onValueChange={() => handleToggleSeason(temp.id)}
-                      trackColor={{ false: c.bordeInput, true: c.boton }}
-                      thumbColor={temp.isActive ? '#fff' : '#f4f3f4'}
-                    />
-                  </View>
-                ))}
-              </View>
-            )}
-
-            <View style={styles.subSectionHeader}>
-              <View>
-                <Text style={[styles.subSectionTitle, { color: c.texto, marginBottom: 0 }]}>👕 Equipos</Text>
-                {activeSeason && (
-                  <Text style={[styles.seasonLabel, { color: c.subtexto }]}>Temporada: {activeSeason.name}</Text>
-                )}
-              </View>
-              <TouchableOpacity
-                style={[styles.smallBtn, {
-                  backgroundColor: activeSeason ? `${c.boton}18` : c.input,
-                  borderColor: activeSeason ? `${c.boton}35` : c.bordeInput,
-                }]}
-                onPress={() => {
-                  if (!activeSeason) {
-                    Alert.alert('Atención', 'Debes activar una temporada antes de crear equipos.')
-                    return
-                  }
-                  setModalEquipo(true)
-                }}
-              >
-                <Text style={[styles.smallBtnText, { color: activeSeason ? c.boton : c.subtexto }]}>+ Nuevo</Text>
-              </TouchableOpacity>
-            </View>
-
-            {!activeSeason ? (
-              <View style={[styles.emptyCard, { backgroundColor: '#f59e0b18', borderColor: '#f59e0b35' }]}>
-                <Text style={[styles.emptyText, { color: '#f59e0b' }]}>⚠️ Activa una temporada para ver y crear equipos</Text>
-              </View>
-            ) : equiposTemporadaActiva.length === 0 ? (
-              <View style={[styles.emptyCard, { backgroundColor: c.input, borderColor: c.bordeInput }]}>
-                <Text style={[styles.emptyText, { color: c.subtexto }]}>No hay equipos en esta temporada</Text>
-              </View>
-            ) : (
-              <View style={styles.list}>
-                {equiposTemporadaActiva.map((eq: any) => (
-                  <View key={eq.id} style={[styles.equipoCard, { backgroundColor: c.input, borderColor: c.bordeInput }]}>
-                    <View style={styles.equipoInfo}>
-                      <Text style={[styles.equipoNombre, { color: c.texto }]}>
-                        {eq.category} {eq.gender === 'MALE' ? '♂' : eq.gender === 'FEMALE' ? '♀' : '⚥'} {eq.suffix}
-                      </Text>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            )}
-          </View>
-        )}
-
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
+        {activeTab === "SOLICITUDES" && renderSolicitudesTab()}
+        {activeTab === "CUOTAS" && renderCuotasTab()}
+        {activeTab === "EQUIPOS" && renderEquiposTab()}
       </ScrollView>
 
-      {/* MODALES */}
-      <Modal visible={modalAnuncio} transparent animationType="slide" onRequestClose={() => setModalAnuncio(false)}>
-        <Pressable style={styles.overlay} onPress={() => setModalAnuncio(false)}>
-          <Pressable style={[styles.modalCard, { backgroundColor: c.fondo, borderColor: c.bordeInput }]} onPress={() => {}}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitulo, { color: c.texto }]}>📢 Nuevo anuncio</Text>
-              <TouchableOpacity style={[styles.closeBtn, { backgroundColor: c.input, borderColor: c.bordeInput }]} onPress={() => setModalAnuncio(false)}>
-                <Text style={[styles.closeBtnText, { color: c.subtexto }]}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            <Text style={[styles.inputLabel, { color: c.subtexto }]}>Enviar a</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
-              <View style={styles.chipsRow}>
-                <TouchableOpacity
-                  style={[styles.chip, { backgroundColor: aTargetTeamId === null ? `${c.boton}18` : c.fondo, borderColor: aTargetTeamId === null ? c.boton : c.bordeInput }]}
-                  onPress={() => setATargetTeamId(null)}
-                >
-                  <Text style={[styles.chipText, { color: aTargetTeamId === null ? c.boton : c.subtexto }]}>🏆 Todo el club</Text>
-                </TouchableOpacity>
-                {equiposTemporadaActiva.map((eq: any) => (
-                  <TouchableOpacity
-                    key={eq.id}
-                    style={[styles.chip, { backgroundColor: aTargetTeamId === eq.id ? `${c.boton}18` : c.fondo, borderColor: aTargetTeamId === eq.id ? c.boton : c.bordeInput }]}
-                    onPress={() => setATargetTeamId(eq.id)}
-                  >
-                    <Text style={[styles.chipText, { color: aTargetTeamId === eq.id ? c.boton : c.subtexto }]}>👕 {eq.category} {eq.suffix}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-
-            <Text style={[styles.inputLabel, { color: c.subtexto }]}>Título *</Text>
-            <TextInput style={[styles.input, { backgroundColor: c.input, borderColor: c.bordeInput, color: c.texto }]} placeholder="Título del anuncio" placeholderTextColor={c.subtexto} value={aTitulo} onChangeText={setATitulo} />
-
-            <Text style={[styles.inputLabel, { color: c.subtexto }]}>Contenido *</Text>
-            <TextInput style={[styles.textArea, { backgroundColor: c.input, borderColor: c.bordeInput, color: c.texto }]} placeholder="Escribe el mensaje..." placeholderTextColor={c.subtexto} value={aContenido} onChangeText={setAContenido} multiline numberOfLines={4} textAlignVertical="top" />
-
-            <View style={styles.switchRow}>
-              <Text style={[styles.inputLabel, { color: c.subtexto, marginBottom: 0 }]}>📌 Fijar anuncio</Text>
-              <Switch value={aPinned} onValueChange={setAPinned} trackColor={{ true: c.boton }} />
-            </View>
-
-            <TouchableOpacity
-              disabled={isSubmitting || !aTitulo || !aContenido}
-              style={[styles.primaryButton, { backgroundColor: c.boton, marginTop: 16, opacity: aTitulo && aContenido ? 1 : 0.5 }]}
-              onPress={publishAnuncio}
-            >
-              {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={[styles.primaryButtonText, { color: '#fff' }]}>Publicar</Text>}
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      <Modal visible={modalCuota} transparent animationType="slide" onRequestClose={() => setModalCuota(false)}>
-        <Pressable style={styles.overlay} onPress={() => setModalCuota(false)}>
-          <Pressable style={[styles.modalCard, { backgroundColor: c.fondo, borderColor: c.bordeInput }]} onPress={() => {}}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitulo, { color: c.texto }]}>💶 Nueva cuota</Text>
-              <TouchableOpacity style={[styles.closeBtn, { backgroundColor: c.input, borderColor: c.bordeInput }]} onPress={() => setModalCuota(false)}>
-                <Text style={[styles.closeBtnText, { color: c.subtexto }]}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            <Text style={[styles.inputLabel, { color: c.subtexto }]}>Concepto *</Text>
-            <TextInput style={[styles.input, { backgroundColor: c.input, borderColor: c.bordeInput, color: c.texto }]} placeholder="Ej: Mensualidad Abril" placeholderTextColor={c.subtexto} value={cConcepto} onChangeText={setCConcepto} />
-
-            <Text style={[styles.inputLabel, { color: c.subtexto }]}>Importe (€) *</Text>
-            <TextInput style={[styles.input, { backgroundColor: c.input, borderColor: c.bordeInput, color: c.texto }]} placeholder="Ej: 50" placeholderTextColor={c.subtexto} value={cImporte} onChangeText={setCImporte} keyboardType="numeric" />
-
-            <Text style={[styles.inputLabel, { color: c.subtexto }]}>Fecha límite *</Text>
-            <TextInput style={[styles.input, { backgroundColor: c.input, borderColor: c.bordeInput, color: c.texto }]} placeholder="15/04/2025" placeholderTextColor={c.subtexto} value={cFecha} onChangeText={setCFecha} />
-
-            <Text style={[styles.inputLabel, { color: c.subtexto }]}>Aplicar a</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
-              <View style={styles.chipsRow}>
-                <TouchableOpacity
-                  style={[styles.chip, { backgroundColor: cTargetTeamId === null ? `${c.boton}18` : c.fondo, borderColor: cTargetTeamId === null ? c.boton : c.bordeInput }]}
-                  onPress={() => setCTargetTeamId(null)}
-                >
-                  <Text style={[styles.chipText, { color: cTargetTeamId === null ? c.boton : c.subtexto }]}>🏆 Todo el club</Text>
-                </TouchableOpacity>
-                {equiposTemporadaActiva.map((eq: any) => (
-                  <TouchableOpacity
-                    key={eq.id}
-                    style={[styles.chip, { backgroundColor: cTargetTeamId === eq.id ? `${c.boton}18` : c.fondo, borderColor: cTargetTeamId === eq.id ? c.boton : c.bordeInput }]}
-                    onPress={() => setCTargetTeamId(eq.id)}
-                  >
-                    <Text style={[styles.chipText, { color: cTargetTeamId === eq.id ? c.boton : c.subtexto }]}>👕 {eq.category} {eq.suffix}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-
-            <TouchableOpacity
-              disabled={isSubmitting || !cConcepto || !cImporte || !cFecha}
-              style={[styles.primaryButton, { backgroundColor: c.boton, opacity: cConcepto && cImporte && cFecha ? 1 : 0.5 }]}
-              onPress={handleCrearCuota}
-            >
-              {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={[styles.primaryButtonText, { color: '#fff' }]}>Crear cuota</Text>}
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      <Modal visible={modalDetalleCuota} transparent animationType="slide" onRequestClose={() => setModalDetalleCuota(false)}>
-        <Pressable style={styles.overlay} onPress={() => setModalDetalleCuota(false)}>
-          <Pressable style={[styles.modalCard, { backgroundColor: c.fondo, borderColor: c.bordeInput }]} onPress={() => {}}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitulo, { color: c.texto }]}>💶 {cuotaSeleccionada?.concept}</Text>
-              <TouchableOpacity style={[styles.closeBtn, { backgroundColor: c.input, borderColor: c.bordeInput }]} onPress={() => setModalDetalleCuota(false)}>
-                <Text style={[styles.closeBtnText, { color: c.subtexto }]}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={false}>
-              {pagosDetalle.length === 0 ? (
-                <Text style={[styles.emptyText, { color: c.subtexto }]}>Cargando pagos...</Text>
-              ) : (
-                pagosDetalle.map((pago: any) => (
-                  <View key={pago.id} style={[styles.pagoRow, { borderBottomColor: c.bordeInput }]}>
-                    <View style={[styles.avatar, { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` }]}>
-                      <Text style={[styles.avatarText, { color: c.boton }]}>{pago.firstName?.charAt(0)}</Text>
-                    </View>
-                    <View style={styles.pagoInfo}>
-                      <Text style={[styles.pagoNombre, { color: c.texto }]}>{pago.firstName} {pago.lastName}</Text>
-                      {pago.paidDate && <Text style={[styles.pagoFecha, { color: c.subtexto }]}>{pago.paidDate}</Text>}
-                    </View>
-                    {pago.status !== 'PAID' ? (
-                      <TouchableOpacity
-                        style={[styles.markPaidBtn, { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` }]}
-                        onPress={() => marcarPagado(pago.id)}
-                      >
-                        <Text style={[styles.markPaidText, { color: c.boton }]}>Pagado</Text>
-                      </TouchableOpacity>
-                    ) : (
-                      <View style={[styles.statusPill, { backgroundColor: `${STATUS_COLOR[pago.status]}18`, borderColor: `${STATUS_COLOR[pago.status]}35` }]}>
-                        <Text style={[styles.statusText, { color: STATUS_COLOR[pago.status] }]}>{STATUS_LABEL[pago.status]}</Text>
-                      </View>
-                    )}
-                  </View>
-                ))
+      {/* ─── MODAL REVISAR SOLICITUD ─── */}
+      <Modal visible={reviewModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'flex-end' }} keyboardShouldPersistTaps="handled">
+            <View style={[styles.modalBox, { backgroundColor: c.fondo }]}>
+              <Text style={[styles.modalTitle, { color: c.texto }]}>Revisar Solicitud</Text>
+              
+              {selectedRequest && (
+                <Text style={{ fontSize: 15, color: c.texto, marginBottom: 20, fontWeight: '500' }}>
+                  {formatRequestTitle(selectedRequest)}
+                </Text>
               )}
-            </ScrollView>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      <Modal visible={modalTemporada} transparent animationType="slide" onRequestClose={() => setModalTemporada(false)}>
-        <Pressable style={styles.overlay} onPress={() => setModalTemporada(false)}>
-          <Pressable style={[styles.modalCard, { backgroundColor: c.fondo, borderColor: c.bordeInput }]} onPress={() => {}}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitulo, { color: c.texto }]}>🗓 Nueva temporada</Text>
-              <TouchableOpacity style={[styles.closeBtn, { backgroundColor: c.input, borderColor: c.bordeInput }]} onPress={() => setModalTemporada(false)}>
-                <Text style={[styles.closeBtnText, { color: c.subtexto }]}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            <Text style={[styles.inputLabel, { color: c.subtexto }]}>Nombre *</Text>
-            <TextInput style={[styles.input, { backgroundColor: c.input, borderColor: c.bordeInput, color: c.texto }]} placeholder="Ej: 2025/2026" placeholderTextColor={c.subtexto} value={tNombre} onChangeText={setTNombre} />
-
-            <Text style={[styles.inputLabel, { color: c.subtexto }]}>Fecha inicio *</Text>
-            <TextInput style={[styles.input, { backgroundColor: c.input, borderColor: c.bordeInput, color: c.texto }]} placeholder="01/09/2025" placeholderTextColor={c.subtexto} value={tInicio} onChangeText={setTInicio} />
-
-            <Text style={[styles.inputLabel, { color: c.subtexto }]}>Fecha fin *</Text>
-            <TextInput style={[styles.input, { backgroundColor: c.input, borderColor: c.bordeInput, color: c.texto }]} placeholder="30/06/2026" placeholderTextColor={c.subtexto} value={tFin} onChangeText={setTFin} />
-
-            <TouchableOpacity
-              disabled={isSubmitting || !tNombre || !tInicio || !tFin}
-              style={[styles.primaryButton, { backgroundColor: c.boton, opacity: tNombre && tInicio && tFin ? 1 : 0.5 }]}
-              onPress={saveTemporada}
-            >
-              {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={[styles.primaryButtonText, { color: '#fff' }]}>Crear temporada</Text>}
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      <Modal visible={modalEquipo} transparent animationType="slide" onRequestClose={() => setModalEquipo(false)}>
-        <Pressable style={styles.overlay} onPress={() => setModalEquipo(false)}>
-          <Pressable style={[styles.modalCard, { backgroundColor: c.fondo, borderColor: c.bordeInput }]} onPress={() => {}}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitulo, { color: c.texto }]}>👕 Nuevo equipo</Text>
-              <TouchableOpacity style={[styles.closeBtn, { backgroundColor: c.input, borderColor: c.bordeInput }]} onPress={() => setModalEquipo(false)}>
-                <Text style={[styles.closeBtnText, { color: c.subtexto }]}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            {activeSeason && (
-              <View style={[styles.badge, { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35`, alignSelf: 'flex-start', marginBottom: 16 }]}>
-                <Text style={[styles.badgeText, { color: c.boton }]}>📅 Temporada: {activeSeason.name}</Text>
+              
+              <View style={{ flexDirection: "row", gap: 10, marginBottom: 20 }}>
+                <TouchableOpacity style={[styles.chipModal, reviewDecision === "APPROVED" ? { backgroundColor: "#DCFCE7", borderColor: "#16A34A" } : { backgroundColor: c.input, borderColor: c.bordeInput }]} onPress={() => setReviewDecision("APPROVED")}>
+                  <Text style={{ fontWeight: "bold", fontSize: 16, color: reviewDecision === "APPROVED" ? "#16A34A" : c.subtexto }}>✅ Aprobar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.chipModal, reviewDecision === "REJECTED" ? { backgroundColor: "#FEE2E2", borderColor: "#DC2626" } : { backgroundColor: c.input, borderColor: c.bordeInput }]} onPress={() => setReviewDecision("REJECTED")}>
+                  <Text style={{ fontWeight: "bold", fontSize: 16, color: reviewDecision === "REJECTED" ? "#DC2626" : c.subtexto }}>❌ Rechazar</Text>
+                </TouchableOpacity>
               </View>
-            )}
 
-            <Text style={[styles.inputLabel, { color: c.subtexto }]}>Categoría</Text>
-            <View style={styles.chipsWrap}>
-              {CATEGORIAS.map(cat => (
-                <TouchableOpacity
-                  key={cat}
-                  style={[styles.chip, { backgroundColor: eCategoria === cat ? `${c.boton}18` : c.input, borderColor: eCategoria === cat ? c.boton : c.bordeInput }]}
-                  onPress={() => setECategoria(cat)}
-                >
-                  <Text style={[styles.chipText, { color: eCategoria === cat ? c.boton : c.subtexto }]}>{cat}</Text>
+              {reviewDecision === "APPROVED" && (
+                <>
+                  {/* Selector de Equipo (Solo para Jugadores y Entrenadores) */}
+                  {(selectedRequest?.requestedRole === "PLAYER" || selectedRequest?.requestedRole === "COACH") && (
+                    <>
+                      <Text style={[styles.inputLabel, { color: c.texto }]}>Asignar equipo *</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+                        {teams.map(t => (
+                          <TouchableOpacity key={t.id} style={[styles.chip, assignTeamId === t.id ? { backgroundColor: `${c.boton}20` } : { backgroundColor: c.input }]} onPress={() => setAssignTeamId(assignTeamId === t.id ? null : t.id)}>
+                            <Text style={[styles.chipText, assignTeamId === t.id ? { color: c.boton } : { color: c.subtexto }]}>{t.category} {t.suffix}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </>
+                  )}
+
+                  {/* Extras si es Jugador */}
+                  {selectedRequest?.requestedRole === "PLAYER" && (
+                    <>
+                      <Text style={[styles.inputLabel, { color: c.texto }]}>Posición en el campo *</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+                        {PLAYER_POSITIONS.map(pos => (
+                          <TouchableOpacity key={pos.value} style={[styles.chip, assignPlayerPosition === pos.value ? { backgroundColor: `${c.boton}20` } : { backgroundColor: c.input }]} onPress={() => setAssignPlayerPosition(pos.value)}>
+                            <Text style={[styles.chipText, assignPlayerPosition === pos.value ? { color: c.boton } : { color: c.subtexto }]}>{pos.label}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </>
+                  )}
+
+                  {/* Extras si es Entrenador */}
+                  {selectedRequest?.requestedRole === "COACH" && (
+                    <>
+                      <Text style={[styles.inputLabel, { color: c.texto }]}>Puesto Técnico *</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+                        {STAFF_ROLES.map(sr => (
+                          <TouchableOpacity key={sr.value} style={[styles.chip, assignStaffRole === sr.value ? { backgroundColor: `${c.boton}20` } : { backgroundColor: c.input }]} onPress={() => setAssignStaffRole(sr.value)}>
+                            <Text style={[styles.chipText, assignStaffRole === sr.value ? { color: c.boton } : { color: c.subtexto }]}>{sr.label}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </>
+                  )}
+
+                  {/* Extras si es Familiar */}
+                  {selectedRequest?.requestedRole === "RELATIVE" && (
+                    <>
+                      <Text style={[styles.inputLabel, { color: c.texto }]}>Jugador Vinculado (Hijo/a) *</Text>
+                      {clubPlayers.length === 0 ? (
+                        <Text style={{ color: c.subtexto, marginBottom: 20, fontStyle: 'italic' }}>No hay jugadores registrados en el club aún.</Text>
+                      ) : (
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+                          {clubPlayers.map(p => (
+                            <TouchableOpacity key={p.id} style={[styles.chip, assignLinkedPlayerId === p.id ? { backgroundColor: `${c.boton}20` } : { backgroundColor: c.input }]} onPress={() => setAssignLinkedPlayerId(p.id)}>
+                              <Text style={[styles.chipText, assignLinkedPlayerId === p.id ? { color: c.boton } : { color: c.subtexto }]}>{p.firstName} {p.lastName}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </ScrollView>
+                      )}
+
+                      <Text style={[styles.inputLabel, { color: c.texto }]}>Parentesco *</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+                        {KINSHIP_TYPES.map(kt => (
+                          <TouchableOpacity key={kt.value} style={[styles.chip, assignKinship === kt.value ? { backgroundColor: `${c.boton}20` } : { backgroundColor: c.input }]} onPress={() => setAssignKinship(kt.value)}>
+                            <Text style={[styles.chipText, assignKinship === kt.value ? { color: c.boton } : { color: c.subtexto }]}>{kt.label}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </>
+                  )}
+                </>
+              )}
+
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+                <TouchableOpacity style={[styles.btnMain, { backgroundColor: c.input, flex: 1, borderWidth: 1, borderColor: c.bordeInput }]} onPress={() => setReviewModal(false)}>
+                  <Text style={{ color: c.texto, fontWeight: 'bold', fontSize: 16 }}>Cancelar</Text>
                 </TouchableOpacity>
-              ))}
-            </View>
-
-            <Text style={[styles.inputLabel, { color: c.subtexto }]}>Género</Text>
-            <View style={styles.chipsWrap}>
-              {GENEROS.map(gen => (
-                <TouchableOpacity
-                  key={gen}
-                  style={[styles.chip, { backgroundColor: eGenero === gen ? `${c.boton}18` : c.input, borderColor: eGenero === gen ? c.boton : c.bordeInput }]}
-                  onPress={() => setEGenero(gen)}
-                >
-                  <Text style={[styles.chipText, { color: eGenero === gen ? c.boton : c.subtexto }]}>{gen}</Text>
+                <TouchableOpacity style={[styles.btnMain, { backgroundColor: reviewDecision === "APPROVED" ? c.boton : "#DC2626", flex: 1 }]} onPress={handleReview}>
+                  <Text style={{ color: "white", fontWeight: 'bold', fontSize: 16 }}>Confirmar</Text>
                 </TouchableOpacity>
-              ))}
+              </View>
             </View>
-
-            <Text style={[styles.inputLabel, { color: c.subtexto }]}>Sufijo *</Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: c.input, borderColor: c.bordeInput, color: c.texto }]}
-              placeholder="Ej: A, B, C, Femenino"
-              placeholderTextColor={c.subtexto}
-              value={eSufijo}
-              onChangeText={setESufijo}
-            />
-
-            <TouchableOpacity
-              disabled={isSubmitting || !eSufijo}
-              style={[styles.primaryButton, { backgroundColor: c.boton, opacity: eSufijo ? 1 : 0.5 }]}
-              onPress={saveEquipo}
-            >
-              {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={[styles.primaryButtonText, { color: '#fff' }]}>Crear equipo</Text>}
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
+          </ScrollView>
+        </View>
       </Modal>
 
+      {/* ─── MODAL CREAR CUOTA ─── */}
+      <Modal visible={createFeeModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: "flex-end" }} keyboardShouldPersistTaps="handled">
+            <View style={[styles.modalBox, { backgroundColor: c.fondo }]}>
+              <Text style={[styles.modalTitle, { color: c.texto }]}>Nueva Cuota</Text>
+              
+              <Text style={[styles.inputLabel, { color: c.texto }]}>Seleccionar Equipo *</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+                {teams.map(t => (
+                  <TouchableOpacity key={t.id} style={[styles.chip, feeForm.teamId === String(t.id) ? { backgroundColor: `${c.boton}20` } : { backgroundColor: c.input }]} onPress={() => setFeeForm((f:any) => ({ ...f, teamId: String(t.id) }))}>
+                    <Text style={[styles.chipText, feeForm.teamId === String(t.id) ? { color: c.boton } : { color: c.subtexto }]}>{t.category} {t.suffix}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <Text style={[styles.inputLabel, { color: c.texto }]}>Concepto *</Text>
+              <TextInput style={[styles.textInput, { backgroundColor: c.input, color: c.texto, borderColor: c.bordeInput }]} value={feeForm.concept ?? ""} onChangeText={v => setFeeForm((f:any) => ({ ...f, concept: v }))} placeholder="Ej: Cuota Anual 2025" placeholderTextColor={c.subtexto} />
+
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.inputLabel, { color: c.texto }]}>Importe (€) *</Text>
+                  <TextInput style={[styles.textInput, { backgroundColor: c.input, color: c.texto, borderColor: c.bordeInput }]} value={feeForm.amount ?? ""} onChangeText={v => setFeeForm((f:any) => ({ ...f, amount: v }))} keyboardType="decimal-pad" placeholder="250.00" placeholderTextColor={c.subtexto} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.inputLabel, { color: c.texto }]}>Vencimiento *</Text>
+                  <TextInput style={[styles.textInput, { backgroundColor: c.input, color: c.texto, borderColor: c.bordeInput }]} value={feeForm.dueDate ?? ""} onChangeText={v => setFeeForm((f:any) => ({ ...f, dueDate: v }))} placeholder="YYYY-MM-DD" placeholderTextColor={c.subtexto} />
+                </View>
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 15 }}>
+                <TouchableOpacity style={[styles.btnMain, { backgroundColor: c.input, flex: 1, borderWidth: 1, borderColor: c.bordeInput }]} onPress={() => setCreateFeeModal(false)}>
+                  <Text style={{ color: c.texto, fontWeight: 'bold', fontSize: 16 }}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.btnMain, { backgroundColor: c.boton, flex: 1 }]} onPress={handleCreateFee}>
+                  <Text style={{ color: "white", fontWeight: 'bold', fontSize: 16 }}>Crear Cuota</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
+
+      {/* ─── MODAL CREAR EQUIPO ─── */}
+      <Modal visible={createTeamModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: "flex-end" }} keyboardShouldPersistTaps="handled">
+            <View style={[styles.modalBox, { backgroundColor: c.fondo }]}>
+              <Text style={[styles.modalTitle, { color: c.texto }]}>Nuevo Equipo</Text>
+
+              <Text style={[styles.inputLabel, { color: c.texto }]}>Categoría *</Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
+                {CATEGORIAS.map(cat => (
+                  <TouchableOpacity key={cat} style={[styles.chip, teamForm.category === cat ? { backgroundColor: `${c.boton}20` } : { backgroundColor: c.input }]} onPress={() => setTeamForm((f:any) => ({ ...f, category: cat }))}>
+                    <Text style={[styles.chipText, teamForm.category === cat ? { color: c.boton } : { color: c.subtexto }]}>{cat}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={[styles.inputLabel, { color: c.texto }]}>Género *</Text>
+              <View style={{ flexDirection: "row", gap: 10, marginBottom: 20 }}>
+                {GENDER_OPTIONS.map(g => (
+                  <TouchableOpacity key={g.value} style={[styles.chipModal, teamForm.gender === g.value ? { backgroundColor: `${c.boton}20`, borderColor: c.boton } : { backgroundColor: c.input, borderColor: c.bordeInput }]} onPress={() => setTeamForm((f:any) => ({ ...f, gender: g.value }))}>
+                    <Text style={{ fontWeight: "bold", fontSize: 15, color: teamForm.gender === g.value ? c.boton : c.subtexto }}>{g.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={[styles.inputLabel, { color: c.texto }]}>Sufijo / Letra *</Text>
+              <TextInput style={[styles.textInput, { backgroundColor: c.input, color: c.texto, borderColor: c.bordeInput }]} value={teamForm.suffix ?? ""} onChangeText={v => setTeamForm((f:any) => ({ ...f, suffix: v }))} placeholder="Ej: A, B, Promesas..." placeholderTextColor={c.subtexto} />
+
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 15 }}>
+                <TouchableOpacity style={[styles.btnMain, { backgroundColor: c.input, flex: 1, borderWidth: 1, borderColor: c.bordeInput }]} onPress={() => setCreateTeamModal(false)}>
+                  <Text style={{ color: c.texto, fontWeight: 'bold', fontSize: 16 }}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.btnMain, { backgroundColor: c.boton, flex: 1 }]} onPress={handleCreateTeam}>
+                  <Text style={{ color: "white", fontWeight: 'bold', fontSize: 16 }}>Crear Equipo</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
-  )
+  );
 }
 
+// ─── ESTILOS DINÁMICOS ───
 const styles = StyleSheet.create({
-  wrapper: { flex: 1 },
-  headerFixed: { paddingTop: 20, paddingHorizontal: 24, borderBottomWidth: 1, paddingBottom: 0 },
-  titulo: { fontSize: 22, fontWeight: 'bold', marginBottom: 12 },
-  tabsRow: { flexDirection: 'row', gap: 4 },
-  tabButton: { paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  tabText: { fontSize: 14, fontWeight: '600' },
-  container: { padding: 24, paddingBottom: 40 },
-  list: { gap: 10 },
-  emptyCard: { borderRadius: 14, borderWidth: 1, padding: 20, alignItems: 'center', marginBottom: 12 },
-  emptyText: { fontSize: 14 },
-  requestCard: { borderRadius: 14, borderWidth: 1, padding: 14, marginBottom: 12, gap: 10 },
-  requestHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  avatar: { width: 40, height: 40, borderRadius: 12, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { fontSize: 16, fontWeight: 'bold' },
-  requestInfo: { flex: 1 },
-  requestNombre: { fontSize: 15, fontWeight: '600' },
-  requestRolReq: { fontSize: 12 },
-  mensajeBox: { borderRadius: 8, padding: 10, borderLeftWidth: 2 },
-  mensajeText: { fontSize: 12, fontStyle: 'italic' },
-  selectLabel: { fontSize: 11, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
-  chipsRow: { flexDirection: 'row', gap: 6 },
-  chip: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5 },
-  chipText: { fontSize: 12, fontWeight: '600' },
-  jugadoresList: { borderWidth: 1, borderRadius: 12, marginBottom: 10, overflow: 'hidden' },
-  jugadorRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 1 },
-  jugAvatar: { width: 32, height: 32, borderRadius: 8, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
-  jugAvatarText: { fontSize: 13, fontWeight: 'bold' },
-  jugNombre: { flex: 1, fontSize: 13, fontWeight: '500' },
-  jugDorsal: { fontSize: 12 },
-  actionsRow: { flexDirection: 'row', gap: 8 },
-  aprobarBtn: { flex: 1, padding: 10, borderRadius: 10, alignItems: 'center' },
-  rechazarBtn: { flex: 1, padding: 10, borderRadius: 10, alignItems: 'center', borderWidth: 1 },
-  actionBtnText: { fontSize: 13, fontWeight: '600', color: '#ffffff' },
-  primaryButton: { padding: 14, borderRadius: 12, alignItems: 'center', marginBottom: 16 },
-  primaryButtonText: { fontWeight: 'bold', fontSize: 15 },
-  anuncioCard: { borderRadius: 14, padding: 14, gap: 6, marginBottom: 10 },
-  anuncioHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  anuncioBadges: { flexDirection: 'row', gap: 6 },
-  iconBtn: { width: 28, height: 28, borderRadius: 8, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  iconBtnText: { fontSize: 12 },
-  anuncioTitulo: { fontSize: 14, fontWeight: '700' },
-  anuncioContenido: { fontSize: 12, lineHeight: 18 },
-  anuncioFooter: { flexDirection: 'row', justifyContent: 'space-between' },
-  anuncioMeta: { fontSize: 11 },
-  badge: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2 },
-  badgeText: { fontSize: 11, fontWeight: '600' },
-  cuotaCard: { borderRadius: 14, borderWidth: 1, padding: 14, gap: 8, marginBottom: 10 },
-  cuotaHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  cuotaTitulo: { fontSize: 15, fontWeight: '700' },
-  cuotaImporte: { fontSize: 18, fontWeight: 'bold' },
-  cuotaMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  cuotaMetaText: { fontSize: 12 },
-  cuotaStats: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
-  statPill: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 },
-  statText: { fontSize: 11, fontWeight: '600' },
-  verDetalleBtn: { borderWidth: 1, borderRadius: 8, padding: 8, alignItems: 'center' },
-  verDetalleText: { fontSize: 12, fontWeight: '500' },
-  pagoRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1 },
-  pagoInfo: { flex: 1 },
-  pagoNombre: { fontSize: 13, fontWeight: '600' },
-  pagoFecha: { fontSize: 11 },
-  markPaidBtn: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
-  markPaidText: { fontSize: 12, fontWeight: '600' },
-  statusPill: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 },
-  statusText: { fontSize: 11, fontWeight: '600' },
-  subSectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  subSectionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 10 },
-  seasonLabel: { fontSize: 12, marginTop: 2 },
-  smallBtn: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
-  smallBtnText: { fontSize: 12, fontWeight: '600' },
-  equipoCard: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderRadius: 12, borderWidth: 1, padding: 12, marginBottom: 8 },
-  equipoInfo: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  equipoNombre: { fontSize: 14, fontWeight: '600' },
-  chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 14 },
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end', padding: 16, paddingBottom: 32 },
-  modalCard: { borderRadius: 20, borderWidth: 1, padding: 20 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  modalTitulo: { fontSize: 17, fontWeight: 'bold', flex: 1 },
-  closeBtn: { width: 32, height: 32, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  closeBtnText: { fontSize: 13, fontWeight: '600' },
-  inputLabel: { fontSize: 13, fontWeight: '500', marginBottom: 6 },
-  input: { borderWidth: 1, borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 14 },
-  textArea: { borderWidth: 1, borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 14, minHeight: 100 },
-  switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }
-})
+  card: { borderRadius: 16, borderWidth: 1, padding: 16, marginBottom: 12 },
+  cardTitle: { fontSize: 18, fontWeight: "bold" },
+  btnMain: { paddingVertical: 16, borderRadius: 14, alignItems: "center", marginBottom: 16 },
+  btnAction: { flex: 1, paddingVertical: 12, borderRadius: 10, borderWidth: 1, alignItems: "center" },
+  chip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, marginRight: 8 },
+  chipText: { fontSize: 14, fontWeight: 'bold' },
+  chipSmall: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  chipModal: { flex: 1, paddingVertical: 14, borderRadius: 14, alignItems: 'center', borderWidth: 1 },
+  textInput: { borderWidth: 1, borderRadius: 14, padding: 16, fontSize: 16, marginBottom: 15 },
+  inputLabel: { fontSize: 14, fontWeight: "bold", marginBottom: 8, marginTop: 4 },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
+  modalBox: { borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: 40, elevation: 10 },
+  modalTitle: { fontSize: 22, fontWeight: "bold", marginBottom: 24 },
+});
