@@ -1,122 +1,139 @@
-import { useState, useEffect } from 'react'
-import { useTranslation } from 'react-i18next'
-import { 
-  Linking, 
-  Modal, 
-  Pressable, 
-  ScrollView, 
-  StyleSheet, 
-  Text, 
-  TextInput, 
-  TouchableOpacity, 
-  View, 
+import { useEffect, useState } from 'react'
+import {
   ActivityIndicator,
-  Alert
+  Alert,
+  Linking,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native'
-import { useTheme } from '../../lib/useTheme'
-import { useAuthStore } from '../../lib/store'
 import { apiFetch } from '../../lib/api'
+import { useAuthStore } from '../../lib/store'
+import { useTheme } from '../../lib/useTheme'
 
 export default function Campos() {
   const c = useTheme()
-  const { t } = useTranslation()
-  
-  // --- DATA DEL STORE ---
-  const user = useAuthStore((state: any) => state.user)
-  const activeTeamId = useAuthStore((state: any) => state.activeTeamId)
-  
-  // RBAC: Solo Presidente y Staff pueden gestionar
-  const puedeGestionar = user?.role === 'PRESIDENT' || user?.role === 'STAFF'
 
-  // --- ESTADOS ---
-  const [campos, setCampos] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [modalAnadir, setModalAnadir] = useState(false)
-  
-  // Formulario Modal
-  const [nombre, setNombre] = useState('')
+  const activeTeamId = useAuthStore((s: any) => s.activeTeamId)
+  const activeRole   = useAuthStore((s: any) => s.activeRole)
+  const clubId       = useAuthStore((s: any) => s.activeClubId)
+
+  // RBAC
+  const isPresident  = activeRole === 'PRESIDENT'
+  const canCreate    = isPresident || activeRole === 'COACH' || activeRole === 'STAFF'
+  const canToggle    = canCreate
+  const canDelete    = isPresident   // EXCLUSIVO del presidente
+
+  // ── STATE ─────────────────────────────────────────────────────────────────
+  const [campos, setCampos]     = useState<any[]>([])
+  const [loading, setLoading]   = useState(true)
+  const [modalOpen, setModal]   = useState(false)
+
+  const [nombre, setNombre]     = useState('')
   const [direccion, setDireccion] = useState('')
-  const [mapsUrl, setMapsUrl] = useState('')
+  const [mapsUrl, setMapsUrl]   = useState('')
 
-  // --- CARGA DE DATOS ---
+  // ── CARGA ─────────────────────────────────────────────────────────────────
   const fetchCampos = async () => {
-    if (!activeTeamId) return
+    const id = clubId || activeTeamId
+    if (!id) return
+
     try {
-      // Usamos el endpoint que busca el club a través del equipo activo
-      const res = await apiFetch(`/api/fields/club-by-team/${activeTeamId}`)
-      if (res.ok) {
-        const data = await res.json()
-        setCampos(data)
-      }
+      // Si tenemos clubId directo → usamos el endpoint limpio
+      const url = clubId
+        ? `/api/fields/club/${clubId}`
+        : `/api/fields/club-by-team/${activeTeamId}`
+      const res = await apiFetch(url)
+      if (res.ok) setCampos(await res.json())
     } catch (e) {
-      console.error("Error al cargar campos:", e)
+      console.error('Error al cargar campos:', e)
     } finally {
       setLoading(false)
     }
   }
 
-  useEffect(() => {
-    fetchCampos()
-  }, [activeTeamId])
+  useEffect(() => { fetchCampos() }, [clubId, activeTeamId])
 
-  // --- ACCIONES ---
+  // ── ACCIONES ──────────────────────────────────────────────────────────────
   const abrirMaps = (url: string) => {
-    if (url) {
-      Linking.openURL(url).catch(() => {
-        Alert.alert("Error", "No se pudo abrir el enlace de Maps")
-      })
-    }
+    if (url) Linking.openURL(url).catch(() => Alert.alert('Error', 'No se pudo abrir el enlace.'))
   }
 
   const toggleActivo = async (id: number) => {
-    // Optimistic UI
-    setCampos(prev => prev.map(c => c.id === id ? { ...c, isActive: !c.isActive } : c))
-    
+    setCampos(prev => prev.map(f => f.id === id ? { ...f, isActive: !f.isActive } : f))
     try {
-      const res = await apiFetch(`/api/fields/${id}/toggle`, { method: 'PATCH' })
+      const res = await apiFetch(`/api/fields/${id}/toggle?clubId=${clubId}`, { method: 'PATCH' })
       if (!res.ok) throw new Error()
-    } catch (e) {
-      Alert.alert("Error", "No se pudo actualizar el estado del campo")
-      fetchCampos() // Revertimos si falla
+    } catch {
+      Alert.alert('Error', 'No se pudo actualizar el estado del campo.')
+      fetchCampos()
+    }
+  }
+
+  const eliminarCampo = async (id: number) => {
+    const confirmar = () => new Promise<boolean>(resolve => {
+      if (Platform.OS === 'web') {
+        resolve(window.confirm('¿Eliminar este campo permanentemente?'))
+      } else {
+        Alert.alert('Eliminar campo', '¿Eliminar este campo permanentemente?', [
+          { text: 'Cancelar', style: 'cancel', onPress: () => resolve(false) },
+          { text: 'Eliminar', style: 'destructive', onPress: () => resolve(true) },
+        ])
+      }
+    })
+
+    if (!await confirmar()) return
+
+    try {
+      const res = await apiFetch(`/api/fields/${id}?clubId=${clubId}`, { method: 'DELETE' })
+      if (res.ok) {
+        setCampos(prev => prev.filter(f => f.id !== id))
+      } else {
+        Alert.alert('Error', 'No se pudo eliminar el campo.')
+      }
+    } catch {
+      Alert.alert('Error de red', 'Fallo de conexión.')
     }
   }
 
   const guardarCampo = async () => {
     if (!nombre || !direccion) {
-      Alert.alert("Atención", "Nombre y dirección son obligatorios")
+      Alert.alert('Atención', 'Nombre y dirección son obligatorios.')
       return
     }
-
     try {
-      // Enviamos el activeTeamId para que el backend sepa a qué Club asociarlo
-      const res = await apiFetch(`/api/fields/team/${activeTeamId}`, {
-        method: 'POST',
-        body: JSON.stringify({ 
-          name: nombre, 
-          address: direccion, 
-          mapUrl: mapsUrl 
-        })
-      })
+      // Siempre enviamos por clubId si lo tenemos; si no, por teamId (legado)
+      const url = clubId
+        ? `/api/fields/club/${clubId}`
+        : `/api/fields/team/${activeTeamId}`
 
+      const res = await apiFetch(url, {
+        method: 'POST',
+        body: JSON.stringify({ name: nombre, address: direccion, mapUrl: mapsUrl }),
+      })
       if (res.ok) {
-        const nuevo = await res.json()
-        setCampos(prev => [...prev, nuevo])
+        setCampos(prev => [...prev, res.json()])
         cerrarModal()
       }
-    } catch (e) {
-      Alert.alert("Error", "No se pudo guardar el campo")
+    } catch {
+      Alert.alert('Error', 'No se pudo guardar el campo.')
     }
   }
 
   const cerrarModal = () => {
-    setModalAnadir(false)
+    setModal(false)
     setNombre('')
     setDireccion('')
     setMapsUrl('')
   }
 
-  const camposActivos = campos.filter(c => c.isActive)
-  const camposInactivos = campos.filter(c => !c.isActive)
+  const activos   = campos.filter(f => f.isActive)
+  const inactivos = campos.filter(f => !f.isActive)
 
   if (loading) {
     return (
@@ -129,66 +146,72 @@ export default function Campos() {
   return (
     <View style={[styles.wrapper, { backgroundColor: c.fondo }]}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        
+
         {/* HEADER */}
         <View style={styles.header}>
-          <Text style={[styles.titulo, { color: c.texto }]}>📍 {t('fields.title')}</Text>
-          {puedeGestionar && (
-            <TouchableOpacity 
-              style={[styles.addButton, { backgroundColor: c.boton }]} 
-              onPress={() => setModalAnadir(true)}
+          <Text style={[styles.titulo, { color: c.texto }]}>📍 Campos</Text>
+          {canCreate && (
+            <TouchableOpacity
+              style={[styles.addButton, { backgroundColor: c.boton }]}
+              onPress={() => setModal(true)}
             >
-              <Text style={[styles.addButtonText, { color: '#fff' }]}>+ {t('fields.addField')}</Text>
+              <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 13 }}>+ Añadir campo</Text>
             </TouchableOpacity>
           )}
         </View>
 
-        {/* SIN CAMPOS */}
         {campos.length === 0 && (
           <View style={[styles.emptyCard, { backgroundColor: c.input, borderColor: c.bordeInput }]}>
-            <Text style={[styles.emptyText, { color: c.subtexto }]}>🏟 {t('fields.noFields')}</Text>
+            <Text style={[styles.emptyText, { color: c.subtexto }]}>🏟 No hay campos registrados</Text>
           </View>
         )}
 
-        {/* LISTA ACTIVOS */}
-        {camposActivos.length > 0 && (
+        {/* ACTIVOS */}
+        {activos.length > 0 && (
           <View style={styles.section}>
-            <Text style={[styles.sectionLabel, { color: c.subtexto }]}>{t('fields.active')}</Text>
+            <Text style={[styles.sectionLabel, { color: c.subtexto }]}>Activos</Text>
             <View style={styles.list}>
-              {camposActivos.map((campo) => (
-                <View 
-                  key={campo.id} 
+              {activos.map(campo => (
+                <View
+                  key={campo.id}
                   style={[styles.campoCard, { backgroundColor: c.input, borderColor: c.bordeInput, borderLeftColor: c.boton }]}
                 >
-                  <View style={styles.campoInfo}>
-                    <View style={styles.campoIconRow}>
-                      <View style={[styles.campoIcon, { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` }]}>
-                        <Text style={styles.campoIconText}>🏟</Text>
-                      </View>
-                      <View style={styles.campoTexts}>
-                        <Text style={[styles.campoNombre, { color: c.texto }]}>{campo.name}</Text>
-                        <Text style={[styles.campoDireccion, { color: c.subtexto }]}>{campo.address}</Text>
-                      </View>
+                  <View style={styles.campoIconRow}>
+                    <View style={[styles.campoIcon, { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` }]}>
+                      <Text style={styles.campoIconText}>🏟</Text>
                     </View>
+                    <View style={styles.campoTexts}>
+                      <Text style={[styles.campoNombre, { color: c.texto }]}>{campo.name}</Text>
+                      <Text style={[styles.campoDireccion, { color: c.subtexto }]}>{campo.address}</Text>
+                    </View>
+                  </View>
 
-                    <View style={styles.campoActions}>
-                      {campo.mapUrl && (
-                        <TouchableOpacity 
-                          style={[styles.actionButton, { backgroundColor: '#3b82f615', borderColor: '#3b82f630' }]} 
-                          onPress={() => abrirMaps(campo.mapUrl)}
-                        >
-                          <Text style={[styles.actionButtonText, { color: '#3b82f6' }]}>🗺 {t('fields.viewMaps')}</Text>
-                        </TouchableOpacity>
-                      )}
-                      {puedeGestionar && (
-                        <TouchableOpacity 
-                          style={[styles.actionButton, { backgroundColor: '#ef444410', borderColor: '#ef444430' }]} 
-                          onPress={() => toggleActivo(campo.id)}
-                        >
-                          <Text style={[styles.actionButtonText, { color: '#ef4444' }]}>{t('fields.deactivate')}</Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
+                  <View style={styles.campoActions}>
+                    {campo.mapUrl && (
+                      <TouchableOpacity
+                        style={[styles.actionButton, { backgroundColor: '#3b82f615', borderColor: '#3b82f630' }]}
+                        onPress={() => abrirMaps(campo.mapUrl)}
+                      >
+                        <Text style={[styles.actionButtonText, { color: '#3b82f6' }]}>🗺 Maps</Text>
+                      </TouchableOpacity>
+                    )}
+                    {canToggle && (
+                      <TouchableOpacity
+                        style={[styles.actionButton, { backgroundColor: '#f59e0b12', borderColor: '#f59e0b30' }]}
+                        onPress={() => toggleActivo(campo.id)}
+                      >
+                        <Text style={[styles.actionButtonText, { color: '#f59e0b' }]}>Desactivar</Text>
+                      </TouchableOpacity>
+                    )}
+                    {/* ELIMINAR: solo presidente */}
+                    {canDelete && (
+                      <TouchableOpacity
+                        style={[styles.actionButton, { backgroundColor: '#ef444410', borderColor: '#ef444430' }]}
+                        onPress={() => eliminarCampo(campo.id)}
+                      >
+                        <Text style={[styles.actionButtonText, { color: '#ef4444' }]}>🗑 Eliminar</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </View>
               ))}
@@ -196,78 +219,92 @@ export default function Campos() {
           </View>
         )}
 
-        {/* LISTA INACTIVOS */}
-        {puedeGestionar && camposInactivos.length > 0 && (
+        {/* INACTIVOS */}
+        {canToggle && inactivos.length > 0 && (
           <View style={styles.section}>
             <Text style={[styles.sectionLabel, { color: c.subtexto }]}>Inactivos</Text>
             <View style={styles.list}>
-              {camposInactivos.map((campo) => (
-                <View 
-                  key={campo.id} 
-                  style={[styles.campoCard, { backgroundColor: c.input, borderColor: c.bordeInput, opacity: 0.7 }]}
+              {inactivos.map((campo, index) => (
+                <View
+                  key={campo.id || `inactivo-${index}`}
+                  style={[styles.campoCard, { backgroundColor: c.input, borderColor: c.bordeInput, opacity: 0.6, paddingVertical: 14, gap: 0, borderLeftWidth: 1 }]}
                 >
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Text style={[styles.campoNombre, { color: c.subtexto, fontSize: 14 }]}>{campo.name}</Text>
-                    <TouchableOpacity 
-                      onPress={() => toggleActivo(campo.id)}
-                      style={[styles.miniButton, { backgroundColor: `${c.boton}15` }]}
-                    >
-                      <Text style={{ color: c.boton, fontSize: 12, fontWeight: 'bold' }}>{t('fields.activate')}</Text>
-                    </TouchableOpacity>
+                    <Text style={[styles.campoNombre, { color: c.subtexto, fontSize: 15, marginBottom: 0 }]}>{campo.name}</Text>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <TouchableOpacity
+                        onPress={() => toggleActivo(campo.id)}
+                        style={[styles.miniButton, { backgroundColor: `${c.boton}15` }]}
+                      >
+                        <Text style={{ color: c.boton, fontSize: 12, fontWeight: 'bold' }}>Activar</Text>
+                      </TouchableOpacity>
+                      {canDelete && (
+                        <TouchableOpacity
+                          onPress={() => eliminarCampo(campo.id)}
+                          style={[styles.miniButton, { backgroundColor: '#ef444415' }]}
+                        >
+                          <Text style={{ color: '#ef4444', fontSize: 12, fontWeight: 'bold' }}>🗑</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
                   </View>
                 </View>
               ))}
             </View>
           </View>
         )}
+        
       </ScrollView>
 
-      {/* MODAL AÑADIR */}
-      <Modal visible={modalAnadir} transparent animationType="slide" onRequestClose={cerrarModal}>
+      {/* MODAL AÑADIR CAMPO */}
+      <Modal visible={modalOpen} transparent animationType="slide" onRequestClose={cerrarModal}>
         <Pressable style={styles.overlay} onPress={cerrarModal}>
           <Pressable style={[styles.modalCard, { backgroundColor: c.fondo, borderColor: c.bordeInput }]} onPress={() => {}}>
-            
+
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitulo, { color: c.texto }]}>📍 {t('fields.addField')}</Text>
-              <TouchableOpacity onPress={cerrarModal} style={styles.closeBtn}>
+              <Text style={[styles.modalTitulo, { color: c.texto }]}>📍 Añadir campo</Text>
+              <TouchableOpacity onPress={cerrarModal}>
                 <Text style={{ color: c.subtexto, fontSize: 20 }}>✕</Text>
               </TouchableOpacity>
             </View>
 
-            <View style={styles.form}>
-              <Text style={[styles.label, { color: c.subtexto }]}>{t('fields.name')} *</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: c.input, borderColor: c.bordeInput, color: c.texto }]}
-                value={nombre}
-                onChangeText={setNombre}
-                placeholder={t('fields.namePlaceholder')}
-                placeholderTextColor={c.subtexto}
-              />
-
-              <Text style={[styles.label, { color: c.subtexto }]}>{t('fields.address')} *</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: c.input, borderColor: c.bordeInput, color: c.texto }]}
-                value={direccion}
-                onChangeText={setDireccion}
-                placeholder={t('fields.addressPlaceholder')}
-                placeholderTextColor={c.subtexto}
-              />
-
-              <Text style={[styles.label, { color: c.subtexto }]}>{t('fields.mapsUrl')}</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: c.input, borderColor: c.bordeInput, color: c.texto }]}
-                value={mapsUrl}
-                onChangeText={setMapsUrl}
-                placeholder="https://goo.gl/maps/..."
-                placeholderTextColor={c.subtexto}
-                autoCapitalize="none"
-              />
-
-              <TouchableOpacity 
-                style={[styles.btnGuardar, { backgroundColor: c.boton }]} 
+            <View style={{ gap: 14 }}>
+              <View>
+                <Text style={[styles.label, { color: c.subtexto }]}>Nombre *</Text>
+                <TextInput
+                  style={[styles.input, { backgroundColor: c.input, borderColor: c.bordeInput, color: c.texto }]}
+                  value={nombre}
+                  onChangeText={setNombre}
+                  placeholder="Campo Municipal..."
+                  placeholderTextColor={c.subtexto}
+                />
+              </View>
+              <View>
+                <Text style={[styles.label, { color: c.subtexto }]}>Dirección *</Text>
+                <TextInput
+                  style={[styles.input, { backgroundColor: c.input, borderColor: c.bordeInput, color: c.texto }]}
+                  value={direccion}
+                  onChangeText={setDireccion}
+                  placeholder="Calle..."
+                  placeholderTextColor={c.subtexto}
+                />
+              </View>
+              <View>
+                <Text style={[styles.label, { color: c.subtexto }]}>Enlace Google Maps</Text>
+                <TextInput
+                  style={[styles.input, { backgroundColor: c.input, borderColor: c.bordeInput, color: c.texto }]}
+                  value={mapsUrl}
+                  onChangeText={setMapsUrl}
+                  placeholder="https://goo.gl/maps/..."
+                  placeholderTextColor={c.subtexto}
+                  autoCapitalize="none"
+                />
+              </View>
+              <TouchableOpacity
+                style={[styles.btnGuardar, { backgroundColor: c.boton }]}
                 onPress={guardarCampo}
               >
-                <Text style={styles.btnGuardarText}>{t('fields.save')}</Text>
+                <Text style={styles.btnGuardarText}>Guardar campo</Text>
               </TouchableOpacity>
             </View>
           </Pressable>
@@ -277,47 +314,38 @@ export default function Campos() {
   )
 }
 
+// Necesario para eliminar en web
+const { Platform } = require('react-native')
+
 const styles = StyleSheet.create({
   wrapper: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   container: { padding: 20, paddingTop: 60, paddingBottom: 40 },
-  
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25 },
   titulo: { fontSize: 24, fontWeight: 'bold' },
   addButton: { paddingHorizontal: 15, paddingVertical: 8, borderRadius: 12 },
-  addButtonText: { fontWeight: 'bold', fontSize: 13 },
-
   emptyCard: { padding: 40, borderRadius: 20, borderWidth: 1, alignItems: 'center', borderStyle: 'dashed' },
   emptyText: { fontSize: 15, fontWeight: '500' },
-
   section: { marginBottom: 30 },
   sectionLabel: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 },
   list: { gap: 12 },
-
-  campoCard: { padding: 16, borderRadius: 18, borderWidth: 1, borderLeftWidth: 4 },
-  campoInfo: { gap: 14 },
+  campoCard: { padding: 16, borderRadius: 18, borderWidth: 1, borderLeftWidth: 4, gap: 14 },
   campoIconRow: { flexDirection: 'row', alignItems: 'center', gap: 15 },
   campoIcon: { width: 48, height: 48, borderRadius: 14, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
   campoIconText: { fontSize: 22 },
   campoTexts: { flex: 1 },
   campoNombre: { fontSize: 16, fontWeight: 'bold', marginBottom: 2 },
   campoDireccion: { fontSize: 13, lineHeight: 18 },
-  
-  campoActions: { flexDirection: 'row', gap: 10 },
+  campoActions: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   actionButton: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, borderWidth: 1 },
   actionButtonText: { fontSize: 12, fontWeight: '700' },
-  
   miniButton: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
-
-  // MODAL
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   modalCard: { borderTopLeftRadius: 25, borderTopRightRadius: 25, padding: 25, borderWidth: 1, borderBottomWidth: 0 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   modalTitulo: { fontSize: 20, fontWeight: 'bold' },
-  closeBtn: { padding: 5 },
-  form: { gap: 15 },
-  label: { fontSize: 13, fontWeight: 'bold' },
+  label: { fontSize: 13, fontWeight: 'bold', marginBottom: 4 },
   input: { padding: 14, borderRadius: 12, borderWidth: 1, fontSize: 15 },
-  btnGuardar: { padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 10 },
-  btnGuardarText: { color: '#fff', fontWeight: 'bold', fontSize: 16 }
+  btnGuardar: { padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 6 },
+  btnGuardarText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
 })

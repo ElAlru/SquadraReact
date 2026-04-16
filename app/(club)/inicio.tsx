@@ -1,123 +1,90 @@
 import { useState, useEffect, useCallback } from 'react'
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Image, ActivityIndicator } from 'react-native'
+import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useRouter } from 'expo-router'
-import { useTranslation } from 'react-i18next'
 import { useTheme } from '../../lib/useTheme'
 import { useAuthStore } from '../../lib/store'
 import { apiFetch } from '../../lib/api'
 
 export default function Inicio() {
   const c = useTheme()
-  const { t } = useTranslation()
   const router = useRouter()
 
-  // --- 1. DATOS DEL STORE ---
-  const profile = useAuthStore((state: any) => state.profile)
-  const clubId = useAuthStore((state: any) => state.activeClubId)
-  const clubName = useAuthStore((state: any) => state.activeClubName || 'Mi Club')
-  const clubLogo = useAuthStore((state: any) => state.activeClubLogo)
-  const teamName = useAuthStore((state: any) => state.activeTeamName)
-  const seasonName = useAuthStore((state: any) => state.activeSeasonName || 'Temporada 25/26')
-  const activeTeamId = useAuthStore((state: any) => state.activeTeamId)
-  const activeRole = useAuthStore((state: any) => state.activeRole)
+  // ── STORE ─────────────────────────────────────────────────────────────────
+  const profile      = useAuthStore((s: any) => s.profile)
+  const clubId       = useAuthStore((s: any) => s.activeClubId)
+  const clubName     = useAuthStore((s: any) => s.activeClubName || 'Mi Club')
+  const clubLogo     = useAuthStore((s: any) => s.activeClubLogo)
+  const teamName     = useAuthStore((s: any) => s.activeTeamName)
+  const seasonLabel  = useAuthStore((s: any) => s.activeSeasonLabel || '')
+  const activeTeamId = useAuthStore((s: any) => s.activeTeamId)
+  const activeRole   = useAuthStore((s: any) => s.activeRole)
 
-  // --- 2. ESTADOS ---
-  const [saludo, setSaludo] = useState('')
+  const isPresident = activeRole === 'PRESIDENT'
+
+  // ── STATE ─────────────────────────────────────────────────────────────────
+  const [saludo, setSaludo]               = useState('')
   const [ultimoAnuncio, setUltimoAnuncio] = useState<any>(null)
-  const [proximosEventos, setProximosEventos] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [hayEquipos, setHayEquipos] = useState(false)
+  const [proximosEventos, setProximos]    = useState<any[]>([])
+  const [loading, setLoading]             = useState(true)
+  const [hayEquipos, setHayEquipos]       = useState(false)
 
-  // --- 3. LÓGICA DE SALUDO ---
+  // ── SALUDO ────────────────────────────────────────────────────────────────
   useEffect(() => {
-    const hora = new Date().getHours()
-    if (hora >= 6 && hora < 12) setSaludo('Buenos días')
-    else if (hora >= 12 && hora < 20) setSaludo('Buenas tardes')
-    else setSaludo('Buenas noches')
+    const h = new Date().getHours()
+    setSaludo(h >= 6 && h < 12 ? 'Buenos días' : h >= 12 && h < 20 ? 'Buenas tardes' : 'Buenas noches')
   }, [])
 
-  // --- 4. PETICIONES A LA API ---
-  const fetchDashboardData = useCallback(async () => {
+  // ── DATOS ─────────────────────────────────────────────────────────────────
+const fetchDashboard = useCallback(async () => {
     setLoading(true)
     try {
-      let isPresidentWithTeams = false;
+      if (!clubId || !seasonLabel) { setLoading(false); return }
 
-      // 🟢 1. Si es presidente, miramos si hay equipos
-      if (activeRole === 'PRESIDENT' && clubId) {
-        const resEquipos = await apiFetch(`/api/president/club/${clubId}/teams`)
-        if (resEquipos.ok) {
-          const dataEquipos = await resEquipos.json()
-          isPresidentWithTeams = dataEquipos.length > 0;
-          setHayEquipos(isPresidentWithTeams)
+      if (isPresident) {
+        const resTeams = await apiFetch(`/api/president/club/${clubId}/teams`)
+        if (resTeams.ok) {
+          const teams = await resTeams.json()
+          setHayEquipos(teams.length > 0)
+          if (teams.length === 0) { setLoading(false); return }
         }
-      }
-
-      // 🟢 2. CONDICIÓN DE PARADA CORRECTA:
-      // Paramos si NO es presi y NO tiene equipo. O si ES presi pero el club está vacío.
-      if ((activeRole !== 'PRESIDENT' && !activeTeamId) || (activeRole === 'PRESIDENT' && !isPresidentWithTeams)) {
+      } else if (!activeTeamId) {
         setLoading(false)
         return
       }
 
-      // 🟢 3. CARGAR ANUNCIOS (Global para presi, Específico para jugadores)
-      const urlAnuncio = activeRole === 'PRESIDENT' 
-          ? `/api/president/club/${clubId}/announcements` 
-          : `/api/tablon/ultimo?teamId=${activeTeamId}`;
-
-      const resAnuncio = await apiFetch(urlAnuncio)
-      if (resAnuncio.ok && resAnuncio.status !== 204) {
-        const dataAnuncio = await resAnuncio.json()
-        
-        if (activeRole === 'PRESIDENT') {
-          // El presi recibe un array (AnuncioCompletoDTO). Cogemos el primero.
-          if (dataAnuncio && dataAnuncio.length > 0) {
-            setUltimoAnuncio({
-              titulo: dataAnuncio[0].titulo,
-              contenido: dataAnuncio[0].contenido,
-              autor: dataAnuncio[0].autor,
-              fecha: dataAnuncio[0].fecha
-            })
-          } else {
-            setUltimoAnuncio(null)
-          }
-        } else {
-          // El jugador recibe el objeto directo
-          setUltimoAnuncio(dataAnuncio)
-        }
+      // 🟢 CORRECCIÓN: Añadido clubId y teamId a la URL
+      let url = `/api/dashboard?clubId=${clubId}&seasonLabel=${seasonLabel}`
+      if (!isPresident && activeTeamId) url += `&teamId=${activeTeamId}`
+      
+      const res = await apiFetch(url)
+      if (res.ok) {
+        const data = await res.json()
+        setUltimoAnuncio(data.ultimoAnuncio || null)
+        setProximos(data.proximosEventos || [])
+        if (!isPresident) setHayEquipos(true)
       }
-
-      // 🟢 4. CARGAR EVENTOS
-      const urlEventos = activeRole === 'PRESIDENT'
-          ? `/api/eventos/proximos?clubId=${clubId}&limit=3` // Asume que tu backend soporta buscar por clubId
-          : `/api/eventos/proximos?teamId=${activeTeamId}&limit=3`;
-
-      const resEventos = await apiFetch(urlEventos)
-      if (resEventos.ok) {
-        const dataEventos = await resEventos.json()
-        setProximosEventos(dataEventos)
-      }
-
-    } catch (error) {
-      console.error("Fallo al cargar dashboard:", error)
+    } catch (e) {
+      console.error('Error dashboard:', e)
     } finally {
       setLoading(false)
     }
-  }, [activeTeamId, activeRole, clubId])
+  }, [clubId, seasonLabel, activeTeamId, activeRole, isPresident])
 
-  useEffect(() => {
-    fetchDashboardData()
-  }, [fetchDashboardData])
+  useEffect(() => { fetchDashboard() }, [fetchDashboard])
+
+  // ── RENDER ────────────────────────────────────────────────────────────────
+  const sinDatos = isPresident ? !hayEquipos : !activeTeamId
 
   return (
     <View style={[styles.wrapper, { backgroundColor: c.fondo }]}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        
-        {/* --- CABECERA --- */}
+
+        {/* ─── CABECERA ─────────────────────────────────────────────────────── */}
         <View style={styles.headerRow}>
           <View style={{ flex: 1 }}>
             <Text style={[styles.saludo, { color: c.subtexto }]}>{saludo},</Text>
             <Text style={[styles.userName, { color: c.texto }]}>
-              {profile?.firstName || 'Presidente'} 👋
+              {profile?.firstName || (isPresident ? 'Presidente' : 'Usuario')} 👋
             </Text>
           </View>
           {clubLogo ? (
@@ -131,53 +98,57 @@ export default function Inicio() {
 
         <Text style={[styles.clubName, { color: c.texto }]}>{clubName}</Text>
 
-        {/* CHIPS DE INFORMACIÓN (Solo se muestran si tienes equipo o temporada activa) */}
-        {(activeTeamId || activeRole === 'PRESIDENT') && (
-            <View style={styles.chipsRow}>
-                <View style={[styles.chip, { backgroundColor: `${c.boton}20` }]}>
-                    <Text style={[styles.chipText, { color: c.boton }]}>📅 {seasonName}</Text>
-                </View>
-                {activeTeamId && (
-                  <View style={[styles.chip, { backgroundColor: `${c.boton}20` }]}>
-                      <Text style={[styles.chipText, { color: c.boton }]}>👕 {teamName || 'Equipo'}</Text>
-                  </View>
-                )}
-                {activeRole === 'PRESIDENT' && !activeTeamId && (
-                  <View style={[styles.chip, { backgroundColor: `${c.boton}20` }]}>
-                      <Text style={[styles.chipText, { color: c.boton }]}>👑 Modo Presidencia</Text>
-                  </View>
-                )}
-            </View>
+        {/* Chips */}
+        {(activeTeamId || isPresident) && (
+          <View style={styles.chipsRow}>
+            {seasonLabel ? (
+              <View style={[styles.chip, { backgroundColor: `${c.boton}20` }]}>
+                <Text style={[styles.chipText, { color: c.boton }]}>📅 {seasonLabel}</Text>
+              </View>
+            ) : null}
+            {activeTeamId ? (
+              <View style={[styles.chip, { backgroundColor: `${c.boton}20` }]}>
+                <Text style={[styles.chipText, { color: c.boton }]}>👕 {teamName || 'Equipo'}</Text>
+              </View>
+            ) : isPresident ? (
+              <View style={[styles.chip, { backgroundColor: `${c.boton}20` }]}>
+                <Text style={[styles.chipText, { color: c.boton }]}>👑 Presidencia</Text>
+              </View>
+            ) : null}
+          </View>
         )}
 
-        {/* --- RENDERIZADO CONDICIONAL --- */}
+        {/* ─── CONTENIDO ─────────────────────────────────────────────────── */}
         {loading ? (
           <ActivityIndicator size="large" color={c.boton} style={{ marginTop: 40 }} />
-        ) : (activeRole === 'PRESIDENT' && !hayEquipos) || (activeRole !== 'PRESIDENT' && !activeTeamId) ? (
-          
-          /* 🛑 PANTALLA VACÍA (Para club nuevo o jugador sin equipo) */
+        ) : sinDatos ? (
+
+          /* Pantalla vacía */
           <View style={[styles.noTeamCard, { backgroundColor: c.input }]}>
-            <Text style={[styles.noTeamTitle, { color: c.texto }]}>¡Bienvenido a tu club!</Text>
-            <Text style={[styles.noTeamSub, { color: c.subtexto }]}>
-              {activeRole === 'PRESIDENT'
-                ? 'Como presidente, el siguiente paso es crear tu primer equipo desde el menú de gestión.' 
-                : 'Aún no tienes un equipo asignado para ver el tablón y los eventos.'}
+            <Text style={{ fontSize: 40, marginBottom: 10 }}>🏟️</Text>
+            <Text style={[styles.noTeamTitle, { color: c.texto }]}>
+              {isPresident ? '¡Bienvenido, Presidente!' : '¡Bienvenido!'}
             </Text>
-            
-            {activeRole === 'PRESIDENT' && (
-                <TouchableOpacity 
-                    style={[styles.btnCrearEquipo, { backgroundColor: c.boton }]}
-                    onPress={() => router.push('/(club)/gestion')}
-                >
-                    <Text style={styles.btnCrearEquipoText}>Ir a Gestión</Text>
-                </TouchableOpacity>
+            <Text style={[styles.noTeamSub, { color: c.subtexto }]}>
+              {isPresident
+                ? 'El siguiente paso es crear tu primer equipo desde el menú de gestión.'
+                : 'Aún no tienes un equipo asignado. Espera a que el club te añada.'}
+            </Text>
+            {isPresident && (
+              <TouchableOpacity
+                style={[styles.btnCrear, { backgroundColor: c.boton }]}
+                onPress={() => router.push('/(club)/gestion-presidente')}
+              >
+                <Text style={styles.btnCrearText}>Ir a Gestión</Text>
+              </TouchableOpacity>
             )}
           </View>
 
         ) : (
-          
-          /* ✅ DASHBOARD (Anuncios y Eventos) */
+
+          /* Dashboard normal */
           <>
+            {/* ── Último anuncio ── */}
             <View style={styles.sectionHeader}>
               <Text style={[styles.sectionTitle, { color: c.texto }]}>Último Anuncio</Text>
               <TouchableOpacity onPress={() => router.push('/tablon')}>
@@ -186,8 +157,8 @@ export default function Inicio() {
             </View>
 
             {ultimoAnuncio ? (
-              <TouchableOpacity 
-                style={[styles.card, { backgroundColor: c.input, borderColor: c.bordeInput }]} 
+              <TouchableOpacity
+                style={[styles.card, { backgroundColor: c.input, borderColor: c.bordeInput }]}
                 onPress={() => router.push('/tablon')}
               >
                 <Text style={[styles.anuncioTitulo, { color: c.texto }]}>📌 {ultimoAnuncio.titulo}</Text>
@@ -195,16 +166,17 @@ export default function Inicio() {
                   {ultimoAnuncio.contenido}
                 </Text>
                 <View style={styles.anuncioMeta}>
-                  <Text style={[styles.anuncioMetaText, { color: c.subtexto }]}>👤 {ultimoAnuncio.autor}</Text>
-                  <Text style={[styles.anuncioMetaText, { color: c.subtexto }]}>🕒 {ultimoAnuncio.fecha}</Text>
+                  <Text style={[styles.metaText, { color: c.subtexto }]}>👤 {ultimoAnuncio.autor}</Text>
+                  <Text style={[styles.metaText, { color: c.subtexto }]}>🕒 {ultimoAnuncio.fecha}</Text>
                 </View>
               </TouchableOpacity>
             ) : (
-              <View style={[styles.card, { backgroundColor: c.input, opacity: 0.7, borderStyle: 'dashed' }]}>
+              <View style={[styles.card, { backgroundColor: c.input, opacity: 0.7, borderStyle: 'dashed', borderColor: c.bordeInput }]}>
                 <Text style={{ color: c.subtexto, textAlign: 'center' }}>No hay anuncios para mostrar aún.</Text>
               </View>
             )}
 
+            {/* ── Próximos eventos ── */}
             <View style={[styles.sectionHeader, { marginTop: 30 }]}>
               <Text style={[styles.sectionTitle, { color: c.texto }]}>Próximos Eventos</Text>
               <TouchableOpacity onPress={() => router.push('/horarios')}>
@@ -212,32 +184,45 @@ export default function Inicio() {
               </TouchableOpacity>
             </View>
 
-            <View style={styles.eventosList}>
-              {proximosEventos.length > 0 ? (
-                proximosEventos.map((evento) => (
-                  <View 
-                    key={evento.id} 
+            {proximosEventos.length > 0 ? (
+              <View style={{ gap: 8 }}>
+                {proximosEventos.map((ev, idx) => (
+                  <View
+                    key={ev.id || idx}
                     style={[
-                      styles.card, 
-                      { backgroundColor: c.input, borderLeftWidth: 4, borderLeftColor: evento.tipo === 'PARTIDO' ? c.boton : '#3b82f6' }
+                      styles.card,
+                      {
+                        backgroundColor: c.input,
+                        borderLeftWidth: 4,
+                        borderLeftColor: ev.tipo === 'PARTIDO' ? c.boton : '#3b82f6',
+                        borderColor: 'transparent',
+                      },
                     ]}
                   >
-                    <View style={styles.eventoHeader}>
-                      <Text style={[styles.eventoTitulo, { color: c.texto, flex: 1 }]}>
-                        {evento.tipo === 'PARTIDO' ? '⚽' : '🏃'} {evento.titulo}
+                    <Text style={[styles.eventoTitulo, { color: c.texto }]}>
+                      {ev.tipo === 'PARTIDO' ? '⚽' : '🏃'} {ev.titulo}
+                    </Text>
+                    {ev.teamName && (
+                      <Text style={[styles.metaText, { color: c.subtexto, marginBottom: 4 }]}>
+                        👕 {ev.teamName}
                       </Text>
-                    </View>
-                    <View style={styles.eventoMeta}>
-                      <Text style={[styles.eventoMetaText, { color: c.subtexto }]}>📅 {evento.fecha} - {evento.horaInicio}</Text>
-                    </View>
+                    )}
+                    <Text style={[styles.metaText, { color: c.subtexto }]}>
+                      📅 {ev.fecha} · 🕒 {ev.horaInicio}
+                    </Text>
+                    {(ev.campo || ev.location) && (
+                      <Text style={[styles.metaText, { color: c.subtexto, marginTop: 2 }]}>
+                        📍 {ev.campo || ev.location}
+                      </Text>
+                    )}
                   </View>
-                ))
-              ) : (
-                <View style={[styles.card, { backgroundColor: c.input, opacity: 0.7, borderStyle: 'dashed' }]}>
-                  <Text style={{ color: c.subtexto, textAlign: 'center' }}>No hay eventos programados.</Text>
-                </View>
-              )}
-            </View>
+                ))}
+              </View>
+            ) : (
+              <View style={[styles.card, { backgroundColor: c.input, opacity: 0.7, borderStyle: 'dashed', borderColor: c.bordeInput }]}>
+                <Text style={{ color: c.subtexto, textAlign: 'center' }}>No hay eventos programados.</Text>
+              </View>
+            )}
           </>
         )}
       </ScrollView>
@@ -253,25 +238,21 @@ const styles = StyleSheet.create({
   userName: { fontSize: 24, fontWeight: 'bold' },
   clubLogo: { width: 50, height: 50, borderRadius: 25 },
   clubName: { fontSize: 20, fontWeight: 'bold', marginBottom: 15 },
-  chipsRow: { flexDirection: 'row', gap: 10, marginBottom: 30 },
+  chipsRow: { flexDirection: 'row', gap: 10, marginBottom: 30, flexWrap: 'wrap' },
   chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 },
   chipText: { fontSize: 13, fontWeight: 'bold' },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 15 },
   sectionTitle: { fontSize: 18, fontWeight: 'bold' },
   linkText: { fontSize: 14, fontWeight: '600' },
-  card: { padding: 16, borderRadius: 12, borderWidth: 1, borderColor: 'transparent', marginBottom: 10 },
+  card: { padding: 16, borderRadius: 12, borderWidth: 1, marginBottom: 10 },
   anuncioTitulo: { fontSize: 16, fontWeight: 'bold', marginBottom: 6 },
   anuncioResumen: { fontSize: 14, lineHeight: 20, marginBottom: 12 },
   anuncioMeta: { flexDirection: 'row', justifyContent: 'space-between' },
-  anuncioMetaText: { fontSize: 12, fontWeight: '500' },
-  eventosList: { gap: 8 },
-  eventoHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
-  eventoTitulo: { fontSize: 15, fontWeight: 'bold' },
-  eventoMeta: { gap: 4 },
-  eventoMetaText: { fontSize: 13 },
+  metaText: { fontSize: 12, fontWeight: '500' },
+  eventoTitulo: { fontSize: 15, fontWeight: 'bold', marginBottom: 6 },
   noTeamCard: { padding: 30, borderRadius: 20, alignItems: 'center', marginTop: 20 },
   noTeamTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 10 },
   noTeamSub: { fontSize: 14, textAlign: 'center', marginBottom: 20, lineHeight: 20 },
-  btnCrearEquipo: { paddingHorizontal: 25, paddingVertical: 12, borderRadius: 12 },
-  btnCrearEquipoText: { color: 'white', fontWeight: 'bold' }
+  btnCrear: { paddingHorizontal: 25, paddingVertical: 12, borderRadius: 12 },
+  btnCrearText: { color: 'white', fontWeight: 'bold' },
 })

@@ -1,121 +1,159 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
-  View,
-  Text,
-  ScrollView,
-  StyleSheet,
-  TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
-} from 'react-native';
-import { useTranslation } from 'react-i18next';
-import { useTheme } from '../../lib/useTheme';
-import { useAuthStore } from '../../lib/store';
-import { apiFetch } from '../../lib/api';
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native'
+import { useTheme } from '../../lib/useTheme'
+import { useAuthStore } from '../../lib/store'
+import { apiFetch } from '../../lib/api'
 
-type Filtro = 'TODOS' | 'PARTIDO' | 'ENTRENAMIENTO';
+type FiltroTipo = 'TODOS' | 'PARTIDO' | 'ENTRENAMIENTO'
 
 export default function Horarios() {
-  const c = useTheme();
-  const { t } = useTranslation();
+  const c = useTheme()
 
-  const clubId = useAuthStore((state: any) => state.activeClubId);
-  const activeTeamId = useAuthStore((state: any) => state.activeTeamId);
-  const activeRole = useAuthStore((state: any) => state.activeRole);
+  const clubId       = useAuthStore((s: any) => s.activeClubId)
+  const activeTeamId = useAuthStore((s: any) => s.activeTeamId)
+  const activeRole   = useAuthStore((s: any) => s.activeRole)
+  const seasonLabel  = useAuthStore((s: any) => s.activeSeasonLabel)
 
-  const [loading, setLoading] = useState(true);
-  const [eventos, setEventos] = useState<any[]>([]);
-  const [filtro, setFiltro] = useState<Filtro>('TODOS');
+  // ── STATE ─────────────────────────────────────────────────────────────────
+  const [loading, setLoading]     = useState(true)
+  const [eventos, setEventos]     = useState<any[]>([])
+  const [filtroTipo, setFiltroTipo] = useState<FiltroTipo>('TODOS')
 
-  // --- 1. CARGAR DATOS ---
-  const fetchEventos = useCallback(async () => {
-    if (!clubId) return;
-    setLoading(true);
-    try {
-      const now = new Date();
-      // OJO: Ajusta la URL si tu endpoint cambia. Según tu log, usas este:
-      let url = `/api/eventos/calendario?clubId=${clubId}&year=${now.getFullYear()}&month=${now.getMonth() + 1}`;
-      
-      // Si quieres filtrar por equipo (opcional, por si el backend lo soporta):
-      if (activeRole !== 'PRESIDENT' && activeTeamId) {
-          url += `&teamId=${activeTeamId}`;
-      }
+  // Selector de equipos
+  const [teams, setTeams]                   = useState<any[]>([])
+  const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null) // null = todos los equipos
 
-      const res = await apiFetch(url);
-      
-      if (res.ok) {
-        // Aseguramos que si es un 204 (No Content) o viene vacío, seteamos un array vacío
-        const data = res.status === 204 ? [] : await res.json();
-        setEventos(Array.isArray(data) ? data : []);
-      } else {
-        setEventos([]);
-      }
-    } catch (error) {
-      console.error("Error cargando horarios:", error);
-      setEventos([]);
-    } finally {
-      setLoading(false); // 👈 ¡ESTO EVITA EL BUCLE INFINITO!
-    }
-  }, [clubId, activeTeamId, activeRole]);
-
+  // ── CARGAR LISTA DE EQUIPOS DEL CLUB ─────────────────────────────────────
   useEffect(() => {
-    fetchEventos();
-  }, [fetchEventos]);
+    if (!clubId) return
+    apiFetch(`/api/club/equipos/${clubId}`)
+      .then(res => res.ok ? res.json() : [])
+      .then((data: any[]) => {
+        setTeams(data)
+        // Default: si no es presidente, preseleccionar su equipo
+        if (activeRole !== 'PRESIDENT' && activeTeamId) {
+          setSelectedTeamId(activeTeamId)
+        }
+        // Presidente por defecto ve todos
+      })
+      .catch(() => {})
+  }, [clubId, activeTeamId, activeRole])
 
-  // --- 2. FILTRAR Y AGRUPAR ---
+  // ── CARGAR EVENTOS ────────────────────────────────────────────────────────
+  const fetchEventos = useCallback(async () => {
+    if (!clubId || !seasonLabel) { setLoading(false); return }
+    setLoading(true)
+    try {
+      const now = new Date()
+      let url = `/api/eventos/calendario?clubId=${clubId}&year=${now.getFullYear()}&month=${now.getMonth() + 1}&seasonLabel=${seasonLabel}`
+      if (selectedTeamId !== null) url += `&teamId=${selectedTeamId}`
+
+      const res = await apiFetch(url)
+      const data = res.status === 204 ? [] : (res.ok ? await res.json() : [])
+      setEventos(Array.isArray(data) ? data : [])
+    } catch (e) {
+      console.error('Error cargando horarios:', e)
+      setEventos([])
+    } finally {
+      setLoading(false)
+    }
+  }, [clubId, seasonLabel, selectedTeamId])
+
+  useEffect(() => { fetchEventos() }, [fetchEventos])
+
+  // ── FILTRAR Y AGRUPAR ─────────────────────────────────────────────────────
   const eventosAgrupados = useMemo(() => {
-    // 1. Filtrar
-    const filtrados = eventos.filter((e) => {
-      if (filtro === 'TODOS') return true;
-      return e.tipo === filtro;
-    });
+    const filtrados = eventos.filter(e =>
+      filtroTipo === 'TODOS' || e.tipo === filtroTipo
+    )
+    const grupos: Record<string, any[]> = {}
+    filtrados.forEach(e => {
+      const d = new Date(e.fecha?.split('/').reverse().join('-') || e.date)
+      const label = d.toLocaleString('es-ES', { month: 'long', year: 'numeric' })
+      const key   = label.charAt(0).toUpperCase() + label.slice(1)
+      if (!grupos[key]) grupos[key] = []
+      grupos[key].push(e)
+    })
+    return grupos
+  }, [eventos, filtroTipo])
 
-    // 2. Agrupar por mes (Ej: "Abril 2026")
-    const grupos: Record<string, any[]> = {};
-    
-    filtrados.forEach((e) => {
-      // Asumimos que la fecha viene en YYYY-MM-DD
-      const fechaObj = new Date(e.fecha || e.date);
-      const mesNombre = fechaObj.toLocaleString('es-ES', { month: 'long', year: 'numeric' });
-      // Capitalizar la primera letra ("abril 2026" -> "Abril 2026")
-      const mesCapitalizado = mesNombre.charAt(0).toUpperCase() + mesNombre.slice(1);
-
-      if (!grupos[mesCapitalizado]) {
-        grupos[mesCapitalizado] = [];
-      }
-      grupos[mesCapitalizado].push(e);
-    });
-
-    return grupos;
-  }, [eventos, filtro]);
-
-  // --- 3. RENDERIZADO ---
+  // ── RENDER ────────────────────────────────────────────────────────────────
   return (
     <View style={[styles.wrapper, { backgroundColor: c.fondo }]}>
-      
-      {/* FILTROS SUPERIORES */}
-      <View style={[styles.filtrosContainer, { borderBottomColor: c.bordeInput }]}>
-        {(['TODOS', 'PARTIDO', 'ENTRENAMIENTO'] as Filtro[]).map((f) => (
+
+      {/* ─── FILTRO TIPO (Tabs superior) ──────────────────────────────────── */}
+      <View style={[styles.tabBar, { borderBottomColor: c.bordeInput }]}>
+        {(['TODOS', 'PARTIDO', 'ENTRENAMIENTO'] as FiltroTipo[]).map(f => (
           <TouchableOpacity
             key={f}
-            style={[
-              styles.filtroBtn,
-              filtro === f && { borderBottomColor: c.boton, borderBottomWidth: 2 }
-            ]}
-            onPress={() => setFiltro(f)}
+            style={[styles.tabBtn, filtroTipo === f && { borderBottomColor: c.boton, borderBottomWidth: 2 }]}
+            onPress={() => setFiltroTipo(f)}
           >
-            <Text style={[
-              styles.filtroText, 
-              { color: filtro === f ? c.boton : c.subtexto, fontWeight: filtro === f ? 'bold' : '600' }
-            ]}>
-              {f === 'TODOS' ? 'Todos' : f === 'PARTIDO' ? 'Partidos' : 'Entrenamientos'}
+            <Text style={[styles.tabText, { color: filtroTipo === f ? c.boton : c.subtexto, fontWeight: filtroTipo === f ? 'bold' : '600' }]}>
+              {f === 'TODOS' ? 'Todos' : f === 'PARTIDO' ? 'Partidos' : 'Entrenos'}
             </Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      <ScrollView 
-        contentContainerStyle={styles.container} 
+      {/* ─── SELECTOR DE EQUIPO ───────────────────────────────────────────── */}
+      {teams.length > 1 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ flexGrow: 0 }}
+          contentContainerStyle={styles.teamScroll}
+        >
+          {/* Opción "Todos" */}
+          <TouchableOpacity
+            style={[
+              styles.teamChip,
+              {
+                backgroundColor: selectedTeamId === null ? c.boton : c.input,
+                borderColor: selectedTeamId === null ? c.boton : c.bordeInput,
+              },
+            ]}
+            onPress={() => setSelectedTeamId(null)}
+          >
+            <Text style={{ color: selectedTeamId === null ? '#fff' : c.texto, fontWeight: '600', fontSize: 12 }}>
+              🏟 Todos
+            </Text>
+          </TouchableOpacity>
+
+          {teams.map((t: any) => {
+            const selected = selectedTeamId === t.id
+            return (
+              <TouchableOpacity
+                key={t.id}
+                style={[
+                  styles.teamChip,
+                  {
+                    backgroundColor: selected ? c.boton : c.input,
+                    borderColor: selected ? c.boton : c.bordeInput,
+                  },
+                ]}
+                onPress={() => setSelectedTeamId(t.id)}
+              >
+                <Text style={{ color: selected ? '#fff' : c.texto, fontWeight: '600', fontSize: 12 }}>
+                  {t.category} {t.suffix}
+                </Text>
+              </TouchableOpacity>
+            )
+          })}
+        </ScrollView>
+      )}
+
+      {/* ─── LISTA DE EVENTOS ─────────────────────────────────────────────── */}
+      <ScrollView
+        contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={fetchEventos} tintColor={c.boton} />}
       >
@@ -123,61 +161,65 @@ export default function Horarios() {
           <ActivityIndicator size="large" color={c.boton} style={{ marginTop: 40 }} />
         ) : Object.keys(eventosAgrupados).length === 0 ? (
           <View style={[styles.emptyCard, { backgroundColor: c.input, borderColor: c.bordeInput }]}>
+            <Text style={{ fontSize: 30, marginBottom: 8 }}>📅</Text>
             <Text style={{ color: c.subtexto, textAlign: 'center', fontSize: 15 }}>
-              No hay {filtro === 'TODOS' ? 'eventos' : filtro.toLowerCase() + 's'} programados.
+              No hay {filtroTipo === 'TODOS' ? 'eventos' : filtroTipo.toLowerCase() + 's'} programados.
             </Text>
           </View>
         ) : (
-          Object.keys(eventosAgrupados).map((mes) => (
+          Object.entries(eventosAgrupados).map(([mes, evList]) => (
             <View key={mes} style={styles.mesGroup}>
-              {/* Título del Mes */}
               <Text style={[styles.mesTitle, { color: c.texto }]}>{mes}</Text>
-
-              {/* Lista de eventos del mes */}
               <View style={styles.eventosList}>
-                {eventosAgrupados[mes].map((evento, index) => {
-                  const esPartido = evento.tipo === 'PARTIDO';
-                  const bordeColor = esPartido ? '#16a34a' : '#3b82f6'; // Verde para partidos, Azul para entrenamientos
-
+                {evList.map((ev, idx) => {
+                  const esPartido = ev.tipo === 'PARTIDO'
+                  const borde     = esPartido ? '#16a34a' : '#3b82f6'
                   return (
-                    <View 
-                      key={evento.id || index} 
-                      style={[styles.eventoCard, { backgroundColor: c.input, borderLeftColor: bordeColor }]}
+                    <View
+                      key={ev.id || idx}
+                      style={[styles.eventoCard, { backgroundColor: c.input, borderLeftColor: borde }]}
                     >
-                      {/* Cabecera del Evento */}
+                      {/* Cabecera */}
                       <View style={styles.eventoHeader}>
                         <Text style={[styles.eventoTitulo, { color: c.texto }]}>
-                          {esPartido ? '⚽' : '🏃'} {evento.titulo}
+                          {esPartido ? '⚽' : '🏃'} {ev.titulo}
                         </Text>
-                        
-                        {/* Marcador (si ya se jugó) */}
-                        {esPartido && evento.resultado && (
+                        {esPartido && ev.resultado && (
                           <View style={[styles.resultadoBadge, { backgroundColor: c.fondo }]}>
-                            <Text style={[styles.resultadoText, { color: c.texto }]}>{evento.resultado}</Text>
+                            <Text style={[styles.resultadoText, { color: c.texto }]}>{ev.resultado}</Text>
                           </View>
                         )}
                       </View>
 
-                      {/* Detalles: Fecha, Hora y Campo */}
-                      <View style={styles.eventoInfoRow}>
-                        <Text style={[styles.eventoText, { color: c.subtexto }]}>📅 {evento.fecha || evento.date}</Text>
-                        <Text style={[styles.eventoText, { color: c.subtexto }]}>🕒 {evento.horaInicio || evento.time}</Text>
-                      </View>
-                      <Text style={[styles.eventoText, { color: c.subtexto, marginTop: 4 }]}>📍 {evento.campo || evento.location || 'Campo por confirmar'}</Text>
+                      {/* Equipo (cuando se ven todos) */}
+                      {selectedTeamId === null && ev.teamName && (
+                        <View style={[styles.teamBadge, { backgroundColor: `${c.boton}15` }]}>
+                          <Text style={[styles.teamBadgeText, { color: c.boton }]}>👕 {ev.teamName}</Text>
+                        </View>
+                      )}
 
-                      {/* Badges Inferiores (Solo para Partidos) */}
+                      {/* Info */}
+                      <View style={styles.eventoInfoRow}>
+                        <Text style={[styles.eventoText, { color: c.subtexto }]}>📅 {ev.fecha}</Text>
+                        <Text style={[styles.eventoText, { color: c.subtexto }]}>🕒 {ev.horaInicio}</Text>
+                      </View>
+                      <Text style={[styles.eventoText, { color: c.subtexto, marginTop: 4 }]}>
+                        📍 {ev.campo || ev.location || 'Campo por confirmar'}
+                      </Text>
+
+                      {/* Badges (partidos) */}
                       {esPartido && (
                         <View style={styles.badgesRow}>
                           <View style={[styles.badge, { backgroundColor: '#f59e0b18', borderColor: '#f59e0b35' }]}>
-                            <Text style={[styles.badgeText, { color: '#f59e0b' }]}>{evento.tipoPartido || 'Liga'}</Text>
+                            <Text style={[styles.badgeText, { color: '#f59e0b' }]}>{ev.tipoPartido || 'Liga'}</Text>
                           </View>
                           <View style={[styles.badge, { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` }]}>
-                            <Text style={[styles.badgeText, { color: c.boton }]}>{evento.isLocal ? '🏠 Local' : '🚌 Visitante'}</Text>
+                            <Text style={[styles.badgeText, { color: c.boton }]}>{ev.isLocal ? '🏠 Local' : '🚌 Visitante'}</Text>
                           </View>
                         </View>
                       )}
                     </View>
-                  );
+                  )
                 })}
               </View>
             </View>
@@ -185,16 +227,18 @@ export default function Horarios() {
         )}
       </ScrollView>
     </View>
-  );
+  )
 }
 
 const styles = StyleSheet.create({
   wrapper: { flex: 1 },
-  filtrosContainer: { flexDirection: 'row', justifyContent: 'space-around', paddingTop: 60, paddingBottom: 0, borderBottomWidth: 1 },
-  filtroBtn: { paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  filtroText: { fontSize: 14 },
+  tabBar: { flexDirection: 'row', justifyContent: 'space-around', paddingTop: 60, paddingBottom: 0, borderBottomWidth: 1 },
+  tabBtn: { paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  tabText: { fontSize: 14 },
+  teamScroll: { paddingHorizontal: 16, paddingVertical: 12, gap: 8 },
+  teamChip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, borderWidth: 1 },
   container: { padding: 20, paddingBottom: 40 },
-  emptyCard: { padding: 30, borderRadius: 14, borderWidth: 1, marginTop: 40, borderStyle: 'dashed' },
+  emptyCard: { padding: 40, borderRadius: 14, borderWidth: 1, marginTop: 40, borderStyle: 'dashed', alignItems: 'center' },
   mesGroup: { marginBottom: 24 },
   mesTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 12, textTransform: 'capitalize' },
   eventosList: { gap: 12 },
@@ -203,9 +247,11 @@ const styles = StyleSheet.create({
   eventoTitulo: { fontSize: 16, fontWeight: 'bold', flex: 1 },
   resultadoBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   resultadoText: { fontSize: 14, fontWeight: 'bold', letterSpacing: 1 },
+  teamBadge: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, marginBottom: 8 },
+  teamBadgeText: { fontSize: 11, fontWeight: '700' },
   eventoInfoRow: { flexDirection: 'row', gap: 16 },
   eventoText: { fontSize: 13 },
   badgesRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
   badge: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
   badgeText: { fontSize: 11, fontWeight: 'bold', textTransform: 'uppercase' },
-});
+})
