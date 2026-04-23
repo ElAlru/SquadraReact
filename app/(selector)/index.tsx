@@ -14,6 +14,7 @@ import {
 import { apiFetch } from "../../lib/api";
 import { useAuthStore } from "../../lib/store";
 import { useTheme } from "../../lib/useTheme";
+import ScreenContainer from "../../components/ScreenContainer";
 
 const ROL_LABEL: Record<string, string> = {
   PRESIDENT: "👑 Presidente",
@@ -73,8 +74,9 @@ export default function SelectorIndex() {
   };
 
   return (
-    <ScrollView 
-      contentContainerStyle={[styles.container, { backgroundColor: c.fondo }]} 
+    <ScreenContainer>
+    <ScrollView
+      contentContainerStyle={[styles.container, { backgroundColor: c.fondo }]}
       refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadAllData(true)} tintColor={c.boton} />}
     >
       <Text style={styles.brand}>SQUADRA</Text>
@@ -130,6 +132,7 @@ export default function SelectorIndex() {
         </View>
       )}
     </ScrollView>
+    </ScreenContainer>
   );
 }
 

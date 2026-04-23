@@ -1,183 +1,239 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ActivityIndicator } from 'react-native';
-import { useTranslation } from 'react-i18next'; // Supongo que usas i18n por tus mensajes anteriores
-import { useNavigation } from '@react-navigation/native';
+import { router } from "expo-router";
+import { useState } from "react";
+import { useTranslation } from "react-i18next"; // <-- Reintegrado
+import {
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { apiFetch } from "../../lib/api";
+import { isValidEmail } from "../../lib/helper";
+import { useTheme } from "../../lib/useTheme";
 
 export default function RecuperarPassword() {
-  const { t } = useTranslation();
-  const navigation = useNavigation();
-  const [email, setEmail] = useState('');
+  const { t } = useTranslation(); // <-- Inicializamos el hook de i18n
+  const c = useTheme();
+  const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
 
   const handleRecover = async () => {
-    if (!email) {
-      Alert.alert(t('common.error'), t('forgotPassword.emailRequired') || 'El correo es obligatorio');
+    if (!isValidEmail(email)) {
+      Alert.alert(
+        t("common.error"),
+        t("forgotPassword.invalidEmail") || "Introduce un email válido.",
+      );
       return;
     }
 
     setLoading(true);
     try {
-      // AQUÍ ESTÁ EL CAMBIO CLAVE DEL ROLLBACK: 
-      // Volvemos a usar la URL de Expo Go. 
-      // ¡Asegúrate de cambiar las XX por tu IP real!
-      const urlRedireccion = 'https://squadra-reset-password.onrender.com';
-
-      const response = await fetch('https://squadraapi.onrender.com/auth/recover', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
+      const res = await apiFetch("/auth/recover", {
+        method: "POST",
+        body: JSON.stringify({
           email: email.toLowerCase().trim(),
-          redirectTo: urlRedireccion 
+          redirectTo: "https://squadra-reset-password.onrender.com",
         }),
       });
 
-      if (response.ok) {
+      if (res.ok) {
         setSent(true);
       } else {
-        const errorData = await response.text();
-        Alert.alert(t('common.error'), errorData || 'Error al solicitar el cambio de contraseña');
+        const msg = await res.text();
+        Alert.alert(
+          t("common.error"),
+          msg ||
+            t("forgotPassword.sendError") ||
+            "No se pudo enviar el enlace.",
+        );
       }
-    } catch (error) {
-      console.error('Error en recuperación:', error);
-      Alert.alert(t('common.error'), 'Error de conexión con el servidor');
+    } catch {
+      Alert.alert(
+        t("common.connectionError"),
+        t("common.serverError") || "No hemos podido conectar con el servidor.",
+      );
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>SQUADRA</Text>
-      
+    <ScrollView
+      contentContainerStyle={[styles.container, { backgroundColor: c.fondo }]}
+      keyboardShouldPersistTaps="handled"
+    >
+      <Text style={styles.brand}>SQUADRA</Text>
+
+      <View
+        style={[
+          styles.shield,
+          { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}40` },
+        ]}
+      >
+        <Text style={{ fontSize: 28 }}>🔑</Text>
+      </View>
+
       {!sent ? (
         <>
-          <Text style={styles.subtitle}>Recuperar Contraseña</Text>
-          <Text style={styles.description}>
-            Introduce tu correo electrónico y te enviaremos un enlace para restablecer tu contraseña.
+          <Text style={[styles.title, { color: c.texto }]}>
+            {t("forgotPassword.title")}
+          </Text>
+          <Text style={[styles.subtitle, { color: c.subtexto }]}>
+            {t("forgotPassword.description")}
           </Text>
 
+          <Text style={[styles.label, { color: c.subtexto }]}>
+            {t("forgotPassword.emailLabel")} *
+          </Text>
           <TextInput
-            style={styles.input}
-            placeholder="Correo electrónico"
-            placeholderTextColor="#888"
-            keyboardType="email-address"
-            autoCapitalize="none"
+            style={[
+              styles.input,
+              {
+                backgroundColor: c.input,
+                borderColor: c.bordeInput,
+                color: c.texto,
+              },
+            ]}
+            placeholder={
+              t("forgotPassword.emailPlaceholder") || "ejemplo@squadra.com"
+            }
+            placeholderTextColor={c.subtexto}
             value={email}
             onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={!loading}
           />
 
-          <TouchableOpacity 
-            style={[styles.button, loading && styles.buttonDisabled]} 
+          <TouchableOpacity
+            style={[
+              styles.button,
+              { backgroundColor: loading ? c.bordeInput : c.boton },
+            ]}
             onPress={handleRecover}
             disabled={loading}
           >
             {loading ? (
-              <ActivityIndicator color="#000" />
+              <ActivityIndicator color={c.botonTexto} />
             ) : (
-              <Text style={styles.buttonText}>Enviar Enlace</Text>
+              <Text style={[styles.buttonText, { color: c.botonTexto }]}>
+                {t("forgotPassword.sendButton")}
+              </Text>
             )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.backLink}
+            onPress={() => router.back()}
+            disabled={loading}
+          >
+            <Text style={[styles.backLinkText, { color: c.boton }]}>
+              {t("forgotPassword.backToLogin")}
+            </Text>
           </TouchableOpacity>
         </>
       ) : (
         <View style={styles.successContainer}>
-          <Text style={styles.successIcon}>✅</Text>
-          <Text style={styles.successTitle}>¡Correo enviado!</Text>
-          <Text style={styles.description}>
-            Revisa tu bandeja de entrada o la carpeta de Spam. Abre el enlace desde este mismo dispositivo para cambiar tu contraseña.
+          <Text style={{ fontSize: 52, marginBottom: 16 }}>✅</Text>
+          <Text style={[styles.title, { color: c.texto }]}>
+            {t("forgotPassword.successTitle")}
           </Text>
-          <TouchableOpacity 
-            style={styles.buttonSecondary} 
-            onPress={() => navigation.goBack()}
+          <Text style={[styles.subtitle, { color: c.subtexto }]}>
+            {t("forgotPassword.successDescription")}
+          </Text>
+          <TouchableOpacity
+            style={[
+              styles.button,
+              {
+                backgroundColor: "transparent",
+                borderWidth: 1,
+                borderColor: c.boton,
+              },
+            ]}
+            onPress={() => router.back()}
           >
-            <Text style={styles.buttonSecondaryText}>Volver al Login</Text>
+            <Text style={[styles.buttonText, { color: c.boton }]}>
+              {t("forgotPassword.backToLogin")}
+            </Text>
           </TouchableOpacity>
         </View>
       )}
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    backgroundColor: '#121212',
-    padding: 20,
-    justifyContent: 'center',
+    flexGrow: 1,
+    padding: 24,
+    paddingTop: 80,
+    paddingBottom: 40,
+  },
+  brand: {
+    fontSize: 13,
+    fontWeight: "bold",
+    color: "#C9A84C",
+    letterSpacing: 4,
+    marginBottom: 32,
+  },
+  shield: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 20,
   },
   title: {
-    fontSize: 32,
-    color: '#379c6f', // Verde Squadra
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 40,
-    letterSpacing: 2,
+    fontSize: 26,
+    fontWeight: "bold",
+    marginBottom: 8,
   },
   subtitle: {
-    fontSize: 24,
-    color: '#fff',
-    fontWeight: 'bold',
-    marginBottom: 10,
-  },
-  description: {
     fontSize: 14,
-    color: '#aaa',
-    marginBottom: 30,
     lineHeight: 20,
+    marginBottom: 32,
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: "500",
+    marginBottom: 6,
   },
   input: {
-    backgroundColor: '#1E1E1E',
-    color: '#fff',
-    padding: 15,
-    borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#333',
-    marginBottom: 20,
-    fontSize: 16,
+    borderRadius: 10,
+    padding: 13,
+    marginBottom: 24,
+    fontSize: 15,
   },
   button: {
-    backgroundColor: '#379c6f', // Verde Squadra
     padding: 15,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  buttonDisabled: {
-    backgroundColor: '#2e835e',
-    opacity: 0.7,
+    borderRadius: 10,
+    alignItems: "center",
+    marginBottom: 16,
+    width: "100%",
   },
   buttonText: {
-    color: '#fff',
+    fontWeight: "bold",
     fontSize: 16,
-    fontWeight: 'bold',
+    letterSpacing: 0.5,
+  },
+  backLink: {
+    alignSelf: "center",
+    padding: 8,
+  },
+  backLinkText: {
+    fontSize: 14,
+    fontWeight: "600",
   },
   successContainer: {
-    alignItems: 'center',
-    padding: 20,
-  },
-  successIcon: {
-    fontSize: 50,
-    marginBottom: 20,
-  },
-  successTitle: {
-    fontSize: 22,
-    color: '#379c6f',
-    fontWeight: 'bold',
-    marginBottom: 10,
-  },
-  buttonSecondary: {
-    marginTop: 20,
-    padding: 15,
-    width: '100%',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#379c6f',
-    alignItems: 'center',
-  },
-  buttonSecondaryText: {
-    color: '#379c6f',
-    fontSize: 16,
-    fontWeight: 'bold',
+    alignItems: "center",
   },
 });

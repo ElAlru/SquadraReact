@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Alert, ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { router } from 'expo-router'
 import { useTheme } from '../../lib/useTheme'
+import ScreenContainer from '../../components/ScreenContainer'
 import { apiFetch } from '../../lib/api'
 
 const ROLES = [
@@ -47,25 +48,28 @@ export default function Unirse() {
 
   if (sent) {
     return (
-      <View style={[styles.successContainer, { backgroundColor: c.fondo }]}>
-        <Text style={{ fontSize: 60, marginBottom: 20 }}>📩</Text>
-        <Text style={[styles.title, { color: c.texto }]}>Solicitud enviada</Text>
-        <Text style={[styles.subtitle, { color: c.subtexto }]}>
-          El presidente del club revisará tu solicitud en breve.
-        </Text>
-        <TouchableOpacity
-          style={[styles.button, { backgroundColor: c.boton, width: '100%' }]}
-          onPress={() => router.replace('/')}
-        >
-          <Text style={styles.buttonText}>Entendido</Text>
-        </TouchableOpacity>
-      </View>
+      <ScreenContainer>
+        <View style={[styles.successContainer, { backgroundColor: c.fondo }]}>
+          <Text style={{ fontSize: 60, marginBottom: 20 }}>📩</Text>
+          <Text style={[styles.title, { color: c.texto }]}>Solicitud enviada</Text>
+          <Text style={[styles.subtitle, { color: c.subtexto }]}>
+            El presidente del club revisará tu solicitud en breve.
+          </Text>
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: c.boton, width: '100%' }]}
+            onPress={() => router.replace('/')}
+          >
+            <Text style={styles.buttonText}>Entendido</Text>
+          </TouchableOpacity>
+        </View>
+      </ScreenContainer>
     )
   }
 
   const canSubmit = codigo.length === 6 && !isLoading
 
   return (
+    <ScreenContainer>
     <ScrollView contentContainerStyle={[styles.container, { backgroundColor: c.fondo }]}>
       <Text style={[styles.title, { color: c.texto, marginTop: 40 }]}>Unirme a un club</Text>
       <Text style={[styles.label, { color: c.subtexto }]}>Código de invitación</Text>
@@ -130,6 +134,7 @@ export default function Unirse() {
         }
       </TouchableOpacity>
     </ScrollView>
+    </ScreenContainer>
   )
 }
 

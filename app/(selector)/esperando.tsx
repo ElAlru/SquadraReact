@@ -1,8 +1,9 @@
-import { router } from 'expo-router'
-import { useEffect, useState } from 'react'
+import { router, useFocusEffect } from 'expo-router'
+import { useCallback, useState } from 'react'
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View, RefreshControl } from 'react-native'
 import { apiFetch } from '../../lib/api'
 import { useTheme } from '../../lib/useTheme'
+import ScreenContainer from '../../components/ScreenContainer'
 
 const ROL_LABEL: Record<string, string> = {
   PLAYER: '⚽ Jugador',
@@ -36,9 +37,10 @@ export default function Esperando() {
     }
   }
 
-  useEffect(() => { checkStatus() }, [])
+  useFocusEffect(useCallback(() => { checkStatus() }, []))
 
   return (
+    <ScreenContainer>
     <ScrollView
       contentContainerStyle={[styles.container, { backgroundColor: c.fondo }]}
       refreshControl={
@@ -89,6 +91,7 @@ export default function Esperando() {
         <Text style={[styles.backButtonText, { color: c.texto }]}>Volver atrás</Text>
       </TouchableOpacity>
     </ScrollView>
+    </ScreenContainer>
   )
 }
 

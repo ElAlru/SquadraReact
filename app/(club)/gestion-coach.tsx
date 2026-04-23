@@ -1,10 +1,18 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
   View, Text, TouchableOpacity, ScrollView, Modal, TextInput,
-  StyleSheet, Alert, ActivityIndicator, FlatList, Switch
+  StyleSheet, Alert, ActivityIndicator, Switch
 } from "react-native";
 import { apiFetch } from "../../lib/api";
 import { useAuthStore } from "../../lib/store";
+import { useTheme } from "../../lib/useTheme";
+import ScreenContainer from "../../components/ScreenContainer";
+
+// Colores semánticos — no dependen del tema
+const COLOR_PELIGRO  = "#ef4444"; // rojo  — eliminar, multa pendiente
+const COLOR_EXITO    = "#16a34a"; // verde — multa pagada
+const COLOR_NEUTRAL  = "#64748B"; // gris  — multa perdonada
+const COLOR_AMARILLO = "#f59e0b"; // amarillo — advertencia
 
 type Tab = "ASISTENCIA" | "CONVOCATORIAS" | "STATS" | "MULTAS";
 
@@ -57,6 +65,7 @@ interface CalendarEvent {
 }
 
 export default function GestionCoach() {
+  const c = useTheme();
   const { activeClubId: clubId, activeTeamId: teamId, activeSeasonName } = useAuthStore();
   const seasonLabel = activeSeasonName || "24-25";
 
@@ -85,6 +94,8 @@ export default function GestionCoach() {
   const [goalsFor, setGoalsFor] = useState("");
   const [goalsAgainst, setGoalsAgainst] = useState("");
 
+  // ── FETCH ──────────────────────────────────────────────────────────────────
+
   const fetchEvents = useCallback(async () => {
     setLoadingEvents(true);
     try {
@@ -92,7 +103,7 @@ export default function GestionCoach() {
       const from = now.toISOString();
       const to = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
       const res = await apiFetch(`/api/calendar?clubId=${clubId}&teamId=${teamId}&seasonLabel=${seasonLabel}&from=${from}&to=${to}`);
-      const data: CalendarEvent[] = await res.json(); // ✅ EXTRAEMOS EL JSON
+      const data: CalendarEvent[] = await res.json();
       setEvents(data);
       if (!selectedEvent && data.length > 0) setSelectedEvent(data[0]);
     } catch {
@@ -117,7 +128,7 @@ export default function GestionCoach() {
     if (!selectedEvent) return;
     try {
       const res = await apiFetch(`/api/coach/training/${selectedEvent.id}/attendance?clubId=${clubId}`);
-      const data = await res.json(); // ✅ EXTRAEMOS EL JSON
+      const data = await res.json();
       setAttendance(data.players);
     } catch {
       Alert.alert("Error", "No se pudo cargar la asistencia.");
@@ -128,7 +139,7 @@ export default function GestionCoach() {
     if (!selectedEvent) return;
     try {
       const res = await apiFetch(`/api/coach/match/callups/${selectedEvent.id}?clubId=${clubId}`);
-      const data: CallupEntry[] = await res.json(); // ✅ EXTRAEMOS EL JSON
+      const data: CallupEntry[] = await res.json();
       setCallups(data.length > 0 ? data : []);
     } catch {}
   };
@@ -137,7 +148,7 @@ export default function GestionCoach() {
     if (!selectedEvent) return;
     try {
       const res = await apiFetch(`/api/coach/match/${selectedEvent.id}/stats?clubId=${clubId}`);
-      const data: StatsEntry[] = await res.json(); // ✅ EXTRAEMOS EL JSON
+      const data: StatsEntry[] = await res.json();
       setStats(data);
     } catch {}
   };
@@ -146,7 +157,7 @@ export default function GestionCoach() {
     setFinesLoading(true);
     try {
       const res = await apiFetch(`/api/coach/fines?clubId=${clubId}&teamId=${teamId}&seasonLabel=${seasonLabel}&page=${page}&size=20`);
-      const data = await res.json(); // ✅ EXTRAEMOS EL JSON
+      const data = await res.json();
       const newFines: Fine[] = data.content;
       setFines(page === 0 ? newFines : prev => [...prev, ...newFines]);
       setFinesHasMore(!data.last);
@@ -155,6 +166,8 @@ export default function GestionCoach() {
       Alert.alert("Error", "No se pudieron cargar las multas.");
     } finally { setFinesLoading(false); }
   };
+
+  // ── ACCIONES ───────────────────────────────────────────────────────────────
 
   const handleSaveBulkAttendance = async () => {
     if (!selectedEvent) return;
@@ -185,15 +198,30 @@ export default function GestionCoach() {
         method: "PUT",
         body: JSON.stringify({
           matchId: selectedEvent.id,
-          entries: callups.map(c => ({
-            playerId: c.playerId,
-            status: c.status,
-            absenceReason: c.absenceReason,
+          entries: callups.map(entry => ({
+            playerId: entry.playerId,
+            status: entry.status,
+            absenceReason: entry.absenceReason,
           })),
         }),
       });
       Alert.alert("Guardado", "Convocatoria guardada.");
-    } catch { Alert.alert("Error", "No se pudo guardar.");
+    } catch {
+      Alert.alert("Error", "No se pudo guardar.");
+    } finally { setSaving(false); }
+  };
+
+  const handleSaveBulkStats = async () => {
+    if (!selectedEvent) return;
+    setSaving(true);
+    try {
+      await apiFetch(`/api/coach/match/${selectedEvent.id}/stats/bulk?clubId=${clubId}`, {
+        method: "PUT",
+        body: JSON.stringify({ entries: stats }),
+      });
+      Alert.alert("Guardado", "Estadísticas guardadas.");
+    } catch {
+      Alert.alert("Error", "No se pudieron guardar las estadísticas.");
     } finally { setSaving(false); }
   };
 
@@ -225,17 +253,24 @@ export default function GestionCoach() {
         }),
       });
       setFineModal(false);
+      setFineReason("");
+      setFineAmount("");
+      setFineTarget(null);
       fetchFines(0);
     } catch { Alert.alert("Error", "No se pudo crear."); }
   };
+
+  // ── RENDERS DE TABS ────────────────────────────────────────────────────────
 
   const renderAttendanceTab = () => (
     <View style={s.tabContent}>
       {selectedEvent?.type === "TRAINING" ? (
         <>
-          {attendance.map((item, idx) => (
-            <View key={item.playerId} style={s.playerRow}>
-              <Text style={s.playerName}>{item.firstName} {item.lastName}</Text>
+          {attendance.length === 0 ? (
+            <Text style={[s.hintText, { color: c.subtexto }]}>Sin jugadores registrados.</Text>
+          ) : attendance.map((item, idx) => (
+            <View key={item.playerId} style={[s.playerRow, { backgroundColor: c.input }]}>
+              <Text style={[s.playerName, { color: c.texto }]}>{item.firstName} {item.lastName}</Text>
               <Switch value={item.attended ?? false} onValueChange={(v) => {
                 const next = [...attendance];
                 next[idx].attended = v;
@@ -243,78 +278,337 @@ export default function GestionCoach() {
               }} />
             </View>
           ))}
-          <TouchableOpacity style={s.btnPrimary} onPress={handleSaveBulkAttendance} disabled={saving}>
-            <Text style={s.btnPrimaryText}>{saving ? "Guardando..." : "💾 Guardar asistencia"}</Text>
+          <TouchableOpacity
+            style={[s.btnPrimary, { backgroundColor: c.boton, opacity: saving ? 0.6 : 1 }]}
+            onPress={handleSaveBulkAttendance}
+            disabled={saving}
+          >
+            <Text style={[s.btnPrimaryText, { color: c.botonTexto }]}>
+              {saving ? "Guardando..." : "💾 Guardar asistencia"}
+            </Text>
           </TouchableOpacity>
         </>
-      ) : <Text style={s.hintText}>Selecciona un entrenamiento.</Text>}
+      ) : (
+        <Text style={[s.hintText, { color: c.subtexto }]}>Selecciona un entrenamiento.</Text>
+      )}
     </View>
   );
 
-  return (
-    <View style={s.container}>
-      <View style={s.header}>
-        <Text style={s.headerTitle}>Gestión Coach</Text>
-        <Text style={s.headerSub}>Temporada {seasonLabel}</Text>
-      </View>
-      <ScrollView>
-        <ScrollView horizontal style={s.eventPicker}>
-          {events.map(e => (
-            <TouchableOpacity key={`${e.type}-${e.id}`} style={[s.eventChip, selectedEvent?.id === e.id && s.eventChipActive]} onPress={() => setSelectedEvent(e)}>
-              <Text>{e.type === "MATCH" ? "⚽" : "🏃"}</Text>
-              <Text style={s.eventChipText}>{e.title}</Text>
-            </TouchableOpacity>
+  const renderConvocatorias = () => (
+    <View style={s.tabContent}>
+      {selectedEvent?.type === "MATCH" ? (
+        <>
+          {callups.length === 0 ? (
+            <Text style={[s.hintText, { color: c.subtexto }]}>Sin convocados aún.</Text>
+          ) : callups.map((item, idx) => (
+            <View key={item.playerId} style={[s.playerRow, { backgroundColor: c.input }]}>
+              <Text style={[s.playerName, { color: c.texto }]}>{item.firstName} {item.lastName}</Text>
+              <View style={{ flexDirection: "row", gap: 4 }}>
+                {(["CALLED_UP", "ABSENT", "INJURED"] as const).map(st => (
+                  <TouchableOpacity
+                    key={st}
+                    style={[
+                      s.statusChip,
+                      { backgroundColor: item.status === st ? c.boton : c.bordeInput },
+                    ]}
+                    onPress={() => {
+                      const next = [...callups];
+                      next[idx].status = st;
+                      setCallups(next);
+                    }}
+                  >
+                    <Text style={[s.statusChipText, { color: item.status === st ? c.botonTexto : c.subtexto }]}>
+                      {st === "CALLED_UP" ? "✓" : st === "ABSENT" ? "A" : "🤕"}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
           ))}
+          <TouchableOpacity
+            style={[s.btnPrimary, { backgroundColor: c.boton, opacity: saving ? 0.6 : 1 }]}
+            onPress={handleSaveBulkCallups}
+            disabled={saving}
+          >
+            <Text style={[s.btnPrimaryText, { color: c.botonTexto }]}>
+              {saving ? "Guardando..." : "💾 Guardar convocatoria"}
+            </Text>
+          </TouchableOpacity>
+        </>
+      ) : (
+        <Text style={[s.hintText, { color: c.subtexto }]}>Selecciona un partido.</Text>
+      )}
+    </View>
+  );
+
+  const renderStats = () => (
+    <View style={s.tabContent}>
+      {selectedEvent?.type === "MATCH" ? (
+        <>
+          {stats.length === 0 ? (
+            <Text style={[s.hintText, { color: c.subtexto }]}>Sin estadísticas aún.</Text>
+          ) : stats.map((item, idx) => (
+            <View
+              key={item.playerId}
+              style={[s.playerRow, { backgroundColor: c.input, flexDirection: "column", alignItems: "flex-start" }]}
+            >
+              <Text style={[s.playerName, { color: c.texto, marginBottom: 8 }]}>
+                {item.firstName} {item.lastName}
+              </Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+                {([
+                  { label: "Goles",     field: "goals"         as const },
+                  { label: "Asist.",    field: "assists"       as const },
+                  { label: "Amarillas", field: "yellowCards"   as const },
+                  { label: "Rojas",     field: "redCards"      as const },
+                  { label: "Minutos",   field: "minutesPlayed" as const },
+                ]).map(({ label, field }) => (
+                  <View key={field} style={{ alignItems: "center", minWidth: 60 }}>
+                    <Text style={{ fontSize: 10, color: c.subtexto, marginBottom: 2 }}>{label}</Text>
+                    <TextInput
+                      style={[s.scoreInput, { borderColor: c.bordeInput, backgroundColor: c.fondo, color: c.texto }]}
+                      value={String(item[field])}
+                      keyboardType="numeric"
+                      onChangeText={(v) => {
+                        const next = [...stats];
+                        (next[idx] as any)[field] = Number(v) || 0;
+                        setStats(next);
+                      }}
+                    />
+                  </View>
+                ))}
+              </View>
+            </View>
+          ))}
+          <TouchableOpacity
+            style={[s.btnPrimary, { backgroundColor: c.boton, opacity: saving ? 0.6 : 1 }]}
+            onPress={handleSaveBulkStats}
+            disabled={saving}
+          >
+            <Text style={[s.btnPrimaryText, { color: c.botonTexto }]}>
+              {saving ? "Guardando..." : "💾 Guardar estadísticas"}
+            </Text>
+          </TouchableOpacity>
+        </>
+      ) : (
+        <Text style={[s.hintText, { color: c.subtexto }]}>Selecciona un partido.</Text>
+      )}
+    </View>
+  );
+
+  const renderFines = () => (
+    <View style={s.tabContent}>
+      <TouchableOpacity
+        style={[s.btnPrimary, { backgroundColor: c.boton, marginBottom: 16 }]}
+        onPress={() => setFineModal(true)}
+      >
+        <Text style={[s.btnPrimaryText, { color: c.botonTexto }]}>+ Nueva multa</Text>
+      </TouchableOpacity>
+
+      {finesLoading && fines.length === 0 ? (
+        <ActivityIndicator color={c.boton} style={{ marginTop: 20 }} />
+      ) : fines.length === 0 ? (
+        <Text style={[s.hintText, { color: c.subtexto }]}>Sin multas registradas.</Text>
+      ) : fines.map(f => (
+        <View
+          key={f.id}
+          style={[s.playerRow, { backgroundColor: c.input, flexDirection: "column", alignItems: "flex-start", gap: 4 }]}
+        >
+          <View style={{ flexDirection: "row", justifyContent: "space-between", width: "100%" }}>
+            <Text style={[s.playerName, { color: c.texto }]}>{f.playerName}</Text>
+            <Text style={{
+              fontWeight: "bold",
+              color: f.status === "PAID" ? COLOR_EXITO : f.status === "FORGIVEN" ? COLOR_NEUTRAL : COLOR_PELIGRO,
+            }}>
+              {f.amount.toFixed(2)} €
+            </Text>
+          </View>
+          <Text style={{ fontSize: 12, color: c.subtexto }}>{f.reason}</Text>
+          <Text style={{ fontSize: 11, color: c.subtexto, opacity: 0.7 }}>{f.issuedDate} · {f.status}</Text>
+        </View>
+      ))}
+
+      {finesHasMore && !finesLoading && (
+        <TouchableOpacity style={s.btnSecondary} onPress={() => fetchFines(finesPage + 1)}>
+          <Text style={{ color: c.boton, fontWeight: "600" }}>Cargar más</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+
+  // ── RENDER PRINCIPAL ───────────────────────────────────────────────────────
+
+  return (
+    <ScreenContainer>
+    <View style={[s.container, { backgroundColor: c.fondo }]}>
+      {/* Cabecera */}
+      <View style={[s.header, { backgroundColor: c.boton }]}>
+        <Text style={[s.headerTitle, { color: c.botonTexto }]}>Gestión Coach</Text>
+        <Text style={[s.headerSub, { color: `${c.botonTexto}cc` }]}>Temporada {seasonLabel}</Text>
+      </View>
+
+      <ScrollView>
+        {/* Selector de evento */}
+        <ScrollView horizontal style={s.eventPicker} showsHorizontalScrollIndicator={false}>
+          {loadingEvents ? (
+            <ActivityIndicator color={c.boton} style={{ margin: 12 }} />
+          ) : events.length === 0 ? (
+            <Text style={[s.hintText, { color: c.subtexto, margin: 12 }]}>Sin eventos próximos.</Text>
+          ) : events.map(e => {
+            const active = selectedEvent?.id === e.id;
+            return (
+              <TouchableOpacity
+                key={`${e.type}-${e.id}`}
+                style={[
+                  s.eventChip,
+                  {
+                    backgroundColor: active ? `${c.boton}20` : c.input,
+                    borderWidth: active ? 2 : 0,
+                    borderColor: active ? c.boton : "transparent",
+                  },
+                ]}
+                onPress={() => setSelectedEvent(e)}
+              >
+                <Text>{e.type === "MATCH" ? "⚽" : "🏃"}</Text>
+                <Text style={[s.eventChipText, { color: c.texto }]}>{e.title}</Text>
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
-        <View style={s.tabBar}>
-          {(["ASISTENCIA","CONVOCATORIAS","STATS","MULTAS"] as Tab[]).map(tab => (
-            <TouchableOpacity key={tab} style={[s.tabItem, activeTab === tab && s.tabItemActive]} onPress={() => setActiveTab(tab)}>
-              <Text style={[s.tabText, activeTab === tab && s.tabTextActive]}>{tab}</Text>
+
+        {/* Tabs */}
+        <View style={[s.tabBar, { borderBottomColor: c.bordeInput }]}>
+          {(["ASISTENCIA", "CONVOCATORIAS", "STATS", "MULTAS"] as Tab[]).map(tab => (
+            <TouchableOpacity
+              key={tab}
+              style={[s.tabItem, activeTab === tab && { borderBottomWidth: 2, borderBottomColor: c.boton }]}
+              onPress={() => setActiveTab(tab)}
+            >
+              <Text style={[s.tabText, { color: activeTab === tab ? c.boton : c.subtexto }]}>
+                {tab}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
-        {activeTab === "ASISTENCIA" && renderAttendanceTab()}
+
+        {activeTab === "ASISTENCIA"    && renderAttendanceTab()}
+        {activeTab === "CONVOCATORIAS" && renderConvocatorias()}
+        {activeTab === "STATS"         && renderStats()}
+        {activeTab === "MULTAS"        && renderFines()}
       </ScrollView>
 
+      {/* ── Modal cerrar partido ── */}
       <Modal visible={closeMatchModal} transparent animationType="slide">
-        <View style={s.modalOverlay}><View style={s.modalBox}>
-          <Text style={s.modalTitle}>Cerrar partido</Text>
-          <TextInput style={s.scoreInput} placeholder="Goles favor" onChangeText={setGoalsFor} keyboardType="numeric" />
-          <TextInput style={s.scoreInput} placeholder="Goles contra" onChangeText={setGoalsAgainst} keyboardType="numeric" />
-          <TouchableOpacity style={s.btnDanger} onPress={handleCloseMatch}><Text style={s.btnDangerText}>Cerrar</Text></TouchableOpacity>
-          <TouchableOpacity style={s.btnSecondary} onPress={() => setCloseMatchModal(false)}><Text>Cancelar</Text></TouchableOpacity>
-        </View></View>
+        <View style={s.modalOverlay}>
+          <View style={[s.modalBox, { backgroundColor: c.fondo, borderColor: c.bordeInput }]}>
+            <Text style={[s.modalTitle, { color: c.texto }]}>Cerrar partido</Text>
+            <TextInput
+              style={[s.scoreInput, { borderColor: c.bordeInput, backgroundColor: c.input, color: c.texto }]}
+              placeholder="Goles a favor"
+              placeholderTextColor={c.subtexto}
+              onChangeText={setGoalsFor}
+              keyboardType="numeric"
+            />
+            <TextInput
+              style={[s.scoreInput, { borderColor: c.bordeInput, backgroundColor: c.input, color: c.texto }]}
+              placeholder="Goles en contra"
+              placeholderTextColor={c.subtexto}
+              onChangeText={setGoalsAgainst}
+              keyboardType="numeric"
+            />
+            <TouchableOpacity style={[s.btnDanger, { backgroundColor: COLOR_PELIGRO }]} onPress={handleCloseMatch}>
+              <Text style={s.btnDangerText}>Cerrar partido</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.btnSecondary} onPress={() => setCloseMatchModal(false)}>
+              <Text style={{ color: c.subtexto, fontWeight: "600" }}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Modal nueva multa ── */}
+      <Modal visible={fineModal} transparent animationType="slide" onRequestClose={() => setFineModal(false)}>
+        <View style={s.modalOverlay}>
+          <View style={[s.modalBox, { backgroundColor: c.fondo, borderColor: c.bordeInput }]}>
+            <Text style={[s.modalTitle, { color: c.texto }]}>Nueva multa</Text>
+
+            <Text style={[s.modalLabel, { color: c.subtexto }]}>Jugador (ID)</Text>
+            <TextInput
+              style={[s.scoreInput, { borderColor: c.bordeInput, backgroundColor: c.input, color: c.texto }]}
+              placeholder="ID del jugador"
+              placeholderTextColor={c.subtexto}
+              keyboardType="numeric"
+              onChangeText={(v) => setFineTarget(v ? { id: Number(v), name: `Jugador ${v}` } : null)}
+            />
+
+            <Text style={[s.modalLabel, { color: c.subtexto }]}>Motivo</Text>
+            <TextInput
+              style={[s.scoreInput, { borderColor: c.bordeInput, backgroundColor: c.input, color: c.texto, height: 70, textAlignVertical: "top" }]}
+              placeholder="Describe el motivo..."
+              placeholderTextColor={c.subtexto}
+              value={fineReason}
+              onChangeText={setFineReason}
+              multiline
+            />
+
+            <Text style={[s.modalLabel, { color: c.subtexto }]}>Importe (€)</Text>
+            <TextInput
+              style={[s.scoreInput, { borderColor: c.bordeInput, backgroundColor: c.input, color: c.texto }]}
+              placeholder="0.00"
+              placeholderTextColor={c.subtexto}
+              keyboardType="numeric"
+              value={fineAmount}
+              onChangeText={setFineAmount}
+            />
+
+            <TouchableOpacity style={[s.btnPrimary, { backgroundColor: c.boton }]} onPress={handleCreateFine}>
+              <Text style={[s.btnPrimaryText, { color: c.botonTexto }]}>Crear multa</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.btnSecondary} onPress={() => setFineModal(false)}>
+              <Text style={{ color: c.subtexto, fontWeight: "600" }}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
     </View>
+    </ScreenContainer>
   );
 }
 
+// Solo valores estructurales — sin colores
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F8FAFC" },
-  header: { backgroundColor: "#1E3A5F", paddingTop: 56, paddingBottom: 20, paddingHorizontal: 20 },
-  headerTitle: { fontSize: 22, fontWeight: "800", color: "#fff" },
-  headerSub: { fontSize: 13, color: "#93C5FD", marginTop: 2 },
-  eventPicker: { padding: 12 },
-  eventChip: { alignItems: "center", marginRight: 10, padding: 10, borderRadius: 12, backgroundColor: "#E2E8F0" },
-  eventChipActive: { backgroundColor: "#DBEAFE", borderWidth: 2, borderColor: "#2563EB" },
-  eventChipText: { fontSize: 10, textAlign: "center" },
-  tabBar: { flexDirection: "row", paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: "#E2E8F0" },
-  tabItem: { flex: 1, paddingVertical: 12, alignItems: "center" },
-  tabItemActive: { borderBottomWidth: 2, borderBottomColor: "#2563EB" },
-  tabText: { fontSize: 11, fontWeight: "600", color: "#64748B" },
-  tabTextActive: { color: "#2563EB" },
-  tabContent: { padding: 16 },
-  hintText: { textAlign: "center", marginTop: 20, color: "#94A3B8" },
-  playerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 12, backgroundColor: "#fff", marginBottom: 8, borderRadius: 10 },
-  playerName: { fontWeight: "600" },
-  btnPrimary: { backgroundColor: "#2563EB", padding: 14, borderRadius: 10, alignItems: "center", marginTop: 10 },
-  btnPrimaryText: { color: "#fff", fontWeight: "700" },
-  scoreInput: { borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 8, padding: 10, marginBottom: 10 },
-  btnDanger: { backgroundColor: "#DC2626", padding: 14, borderRadius: 10, alignItems: "center" },
-  btnDangerText: { color: "#fff", fontWeight: "700" },
-  btnSecondary: { padding: 14, alignItems: "center" },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
-  modalBox: { backgroundColor: "#fff", padding: 24, borderTopLeftRadius: 20, borderTopRightRadius: 20 },
-  // 👇 AQUÍ ESTÁ EL QUE FALTABA
-  modalTitle: { fontSize: 20, fontWeight: "700", color: "#1E293B", marginBottom: 15 }
+  container:      { flex: 1 },
+  header:         { paddingTop: 56, paddingBottom: 20, paddingHorizontal: 20 },
+  headerTitle:    { fontSize: 22, fontWeight: "800" },
+  headerSub:      { fontSize: 13, marginTop: 2 },
+
+  eventPicker:    { padding: 12 },
+  eventChip:      { alignItems: "center", marginRight: 10, padding: 10, borderRadius: 12 },
+  eventChipText:  { fontSize: 10, textAlign: "center", marginTop: 2 },
+
+  tabBar:         { flexDirection: "row", paddingHorizontal: 16, borderBottomWidth: 1 },
+  tabItem:        { flex: 1, paddingVertical: 12, alignItems: "center", borderBottomWidth: 2, borderBottomColor: "transparent" },
+  tabText:        { fontSize: 11, fontWeight: "600" },
+
+  tabContent:     { padding: 16 },
+  hintText:       { textAlign: "center", marginTop: 20 },
+
+  playerRow:      { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 12, marginBottom: 8, borderRadius: 10 },
+  playerName:     { fontWeight: "600", flex: 1 },
+
+  statusChip:     { width: 32, height: 32, borderRadius: 8, alignItems: "center", justifyContent: "center" },
+  statusChipText: { fontSize: 12, fontWeight: "700" },
+
+  btnPrimary:     { padding: 14, borderRadius: 10, alignItems: "center", marginTop: 10 },
+  btnPrimaryText: { fontWeight: "700" },
+  btnDanger:      { padding: 14, borderRadius: 10, alignItems: "center", marginTop: 8 },
+  btnDangerText:  { color: "#fff", fontWeight: "700" },
+  btnSecondary:   { padding: 14, alignItems: "center" },
+
+  scoreInput:     { borderWidth: 1, borderRadius: 8, padding: 10, marginBottom: 10 },
+
+  modalOverlay:   { flex: 1, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "flex-end" },
+  modalBox:       { padding: 24, borderTopLeftRadius: 20, borderTopRightRadius: 20, borderWidth: 1, borderBottomWidth: 0 },
+  modalTitle:     { fontSize: 20, fontWeight: "700", marginBottom: 15 },
+  modalLabel:     { fontSize: 12, fontWeight: "600", marginBottom: 4 },
 });

@@ -1,9 +1,10 @@
 import { Drawer } from 'expo-router/drawer'
 import { useTranslation } from 'react-i18next'
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useTheme } from '../../lib/useTheme'
 import { useAuthStore } from '../../lib/store'
 import { useRouter } from 'expo-router'
+import WebNavBar from '../../components/WebNavBar'
 
 function DrawerContent({ navigation }: { navigation: any }) {
   const c = useTheme()
@@ -120,12 +121,53 @@ function DrawerContent({ navigation }: { navigation: any }) {
 export default function ClubLayout() {
   const c = useTheme()
   const router = useRouter()
+  const isWeb = Platform.OS === 'web'
 
   // Obtenemos el rol actual para configurar las pantallas del Drawer
   const activeRole = useAuthStore((state: any) => state.activeRole)
   const profile = useAuthStore((state: any) => state.profile)
   const esPresidente = activeRole === 'PRESIDENT'
   const esCoach = activeRole === 'COACH' || activeRole === 'PRESIDENT'
+
+  const screens = (
+    <>
+      <Drawer.Screen name="inicio" />
+      <Drawer.Screen name="calendario" />
+      <Drawer.Screen name="horarios" />
+      <Drawer.Screen name="tablon" />
+      <Drawer.Screen name="mi-club" />
+
+      {/* Estas pantallas se ocultan del menú si el usuario no tiene el rol adecuado */}
+      <Drawer.Screen
+        name="gestion-coach"
+        options={{ drawerItemStyle: { display: esCoach ? 'flex' : 'none' } }}
+      />
+      <Drawer.Screen
+        name="gestion-presidente"
+        options={{ drawerItemStyle: { display: esPresidente ? 'flex' : 'none' } }}
+      />
+      <Drawer.Screen name="campos" />
+      <Drawer.Screen
+        name="mi-perfil"
+        options={{ drawerItemStyle: { display: 'none' } }}
+      />
+    </>
+  )
+
+  if (isWeb) {
+    return (
+      <>
+        <WebNavBar />
+        <Drawer
+          drawerContent={(props) => <DrawerContent {...props} />}
+          screenOptions={{ headerShown: false }}
+          sceneContainerStyle={{ paddingTop: 56 }}
+        >
+          {screens}
+        </Drawer>
+      </>
+    )
+  }
 
   return (
     <Drawer
@@ -148,39 +190,20 @@ export default function ClubLayout() {
           <Text style={styles.headerBrand}>SQUADRA</Text>
         ),
         headerRight: () => (
-    <TouchableOpacity
-      style={styles.avatarHeaderBtn}
-      onPress={() => navigation.navigate('mi-perfil')}
-    >
-      <View style={[styles.avatarHeaderCircle, { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` }]}>
-        <Text style={[styles.avatarHeaderText, { color: c.boton }]}>
-          {profile?.firstName?.charAt(0)?.toUpperCase() || 'U'}
-        </Text>
-      </View>
-    </TouchableOpacity>
-  ),
+          <TouchableOpacity
+            style={styles.avatarHeaderBtn}
+            onPress={() => navigation.navigate('mi-perfil')}
+          >
+            <View style={[styles.avatarHeaderCircle, { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` }]}>
+              <Text style={[styles.avatarHeaderText, { color: c.boton }]}>
+                {profile?.firstName?.charAt(0)?.toUpperCase() || 'U'}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        ),
       })}
     >
-      <Drawer.Screen name="inicio" />
-      <Drawer.Screen name="calendario" />
-      <Drawer.Screen name="horarios" />
-      <Drawer.Screen name="tablon" />
-      <Drawer.Screen name="mi-club" />
-      
-      {/* Estas pantallas se ocultan del menú si el usuario no tiene el rol adecuado */}
-      <Drawer.Screen
-        name="gestion-coach"
-        options={{ drawerItemStyle: { display: esCoach ? 'flex' : 'none' } }}
-      />
-      <Drawer.Screen
-        name="gestion-presidente"
-        options={{ drawerItemStyle: { display: esPresidente ? 'flex' : 'none' } }}
-      />
-      <Drawer.Screen name="campos" />
-      <Drawer.Screen
-        name="mi-perfil"
-        options={{ drawerItemStyle: { display: 'none' } }}
-      />
+      {screens}
     </Drawer>
   )
 }

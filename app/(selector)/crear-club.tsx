@@ -4,6 +4,7 @@ import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, Touc
 import { apiFetch } from '../../lib/api'
 import { useAuthStore } from '../../lib/store'
 import { useTheme } from '../../lib/useTheme'
+import ScreenContainer from '../../components/ScreenContainer'
 
 export default function CrearClub() {
   const c = useTheme()
@@ -58,6 +59,7 @@ export default function CrearClub() {
 
   if (created) {
     return (
+      <ScreenContainer>
       <View style={[styles.container, { backgroundColor: c.fondo, justifyContent: 'center' }]}>
         <Text style={{ fontSize: 60, marginBottom: 20 }}>🏆</Text>
         <Text style={[styles.title, { color: c.texto }]}>¡Club creado!</Text>
@@ -75,10 +77,12 @@ export default function CrearClub() {
           <Text style={styles.buttonText}>Empezar a gestionar</Text>
         </TouchableOpacity>
       </View>
+      </ScreenContainer>
     )
   }
 
   return (
+    <ScreenContainer>
     <ScrollView contentContainerStyle={[styles.container, { backgroundColor: c.fondo }]}>
       <Text style={[styles.title, { color: c.texto, marginTop: 40 }]}>Nuevo club</Text>
 
@@ -117,6 +121,7 @@ export default function CrearClub() {
         }
       </TouchableOpacity>
     </ScrollView>
+    </ScreenContainer>
   )
 }
 

@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useFocusEffect } from 'expo-router'
+import { useCallback, useEffect, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
   Linking,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -15,6 +17,10 @@ import {
 import { apiFetch } from '../../lib/api'
 import { useAuthStore } from '../../lib/store'
 import { useTheme } from '../../lib/useTheme'
+import ScreenContainer from '../../components/ScreenContainer'
+
+// Gestor: puede ver inactivos y gestionar. Espectador: solo ve activos + cómo llegar.
+const ROLES_GESTOR = ['PRESIDENT', 'COACH', 'STAFF']
 
 export default function Campos() {
   const c = useTheme()
@@ -23,28 +29,28 @@ export default function Campos() {
   const activeRole   = useAuthStore((s: any) => s.activeRole)
   const clubId       = useAuthStore((s: any) => s.activeClubId)
 
-  // RBAC
-  const isPresident  = activeRole === 'PRESIDENT'
-  const canCreate    = isPresident || activeRole === 'COACH' || activeRole === 'STAFF'
-  const canToggle    = canCreate
-  const canDelete    = isPresident   // EXCLUSIVO del presidente
+  const isGestor    = ROLES_GESTOR.includes(activeRole ?? '')
+  const isPresident = activeRole === 'PRESIDENT'
+  const canCreate   = isGestor
+  const canToggle   = isGestor
+  const canDelete   = isPresident
 
   // ── STATE ─────────────────────────────────────────────────────────────────
-  const [campos, setCampos]     = useState<any[]>([])
-  const [loading, setLoading]   = useState(true)
-  const [modalOpen, setModal]   = useState(false)
+  const [campos, setCampos]       = useState<any[]>([])
+  const [loading, setLoading]     = useState(true)
+  const [modalOpen, setModal]     = useState(false)
+  const [saving, setSaving]       = useState(false)
 
-  const [nombre, setNombre]     = useState('')
+  const [nombre, setNombre]       = useState('')
   const [direccion, setDireccion] = useState('')
-  const [mapsUrl, setMapsUrl]   = useState('')
+  const [mapsUrl, setMapsUrl]     = useState('')
 
   // ── CARGA ─────────────────────────────────────────────────────────────────
-  const fetchCampos = async () => {
+  const fetchCampos = useCallback(async () => {
     const id = clubId || activeTeamId
-    if (!id) return
+    if (!id) { setLoading(false); return }
 
     try {
-      // Si tenemos clubId directo → usamos el endpoint limpio
       const url = clubId
         ? `/api/fields/club/${clubId}`
         : `/api/fields/club-by-team/${activeTeamId}`
@@ -55,15 +61,21 @@ export default function Campos() {
     } finally {
       setLoading(false)
     }
+  }, [clubId, activeTeamId])
+
+  useEffect(() => { fetchCampos() }, [fetchCampos])
+
+  useFocusEffect(useCallback(() => { fetchCampos() }, [fetchCampos]))
+
+  // ── ACCIONES COMUNES ──────────────────────────────────────────────────────
+  const abrirMaps = (campo: any) => {
+    const url = campo.mapUrl
+      ? campo.mapUrl
+      : `https://maps.google.com/?q=${encodeURIComponent(campo.address)}`
+    Linking.openURL(url).catch(() => Alert.alert('Error', 'No se pudo abrir el mapa.'))
   }
 
-  useEffect(() => { fetchCampos() }, [clubId, activeTeamId])
-
-  // ── ACCIONES ──────────────────────────────────────────────────────────────
-  const abrirMaps = (url: string) => {
-    if (url) Linking.openURL(url).catch(() => Alert.alert('Error', 'No se pudo abrir el enlace.'))
-  }
-
+  // ── ACCIONES GESTOR ───────────────────────────────────────────────────────
   const toggleActivo = async (id: number) => {
     setCampos(prev => prev.map(f => f.id === id ? { ...f, isActive: !f.isActive } : f))
     try {
@@ -106,8 +118,8 @@ export default function Campos() {
       Alert.alert('Atención', 'Nombre y dirección son obligatorios.')
       return
     }
+    setSaving(true)
     try {
-      // Siempre enviamos por clubId si lo tenemos; si no, por teamId (legado)
       const url = clubId
         ? `/api/fields/club/${clubId}`
         : `/api/fields/team/${activeTeamId}`
@@ -117,11 +129,16 @@ export default function Campos() {
         body: JSON.stringify({ name: nombre, address: direccion, mapUrl: mapsUrl }),
       })
       if (res.ok) {
-        setCampos(prev => [...prev, res.json()])
+        const nuevoCampo = await res.json()
+        setCampos(prev => [...prev, nuevoCampo])
         cerrarModal()
+      } else {
+        Alert.alert('Error', 'No se pudo guardar el campo.')
       }
     } catch {
       Alert.alert('Error', 'No se pudo guardar el campo.')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -135,15 +152,68 @@ export default function Campos() {
   const activos   = campos.filter(f => f.isActive)
   const inactivos = campos.filter(f => !f.isActive)
 
+  // ── LOADING ───────────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <View style={[styles.center, { backgroundColor: c.fondo }]}>
-        <ActivityIndicator size="large" color={c.boton} />
-      </View>
+      <ScreenContainer>
+        <View style={[styles.center, { backgroundColor: c.fondo }]}>
+          <ActivityIndicator size="large" color={c.boton} />
+        </View>
+      </ScreenContainer>
     )
   }
 
+  // ── VISTA ESPECTADOR ──────────────────────────────────────────────────────
+  if (!isGestor) {
+    return (
+      <ScreenContainer>
+        <ScrollView style={{ flex: 1, backgroundColor: c.fondo }} contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+
+          <Text style={[styles.titulo, { color: c.texto, marginBottom: 25 }]}>📍 Campos</Text>
+
+          {activos.length === 0 ? (
+            <View style={[styles.emptyCard, { backgroundColor: c.input, borderColor: c.bordeInput }]}>
+              <Text style={{ fontSize: 30, marginBottom: 8 }}>🏟</Text>
+              <Text style={[styles.emptyText, { color: c.subtexto, textAlign: 'center' }]}>
+                El club aún no ha registrado campos de entrenamiento
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.list}>
+              {activos.map(campo => (
+                <View
+                  key={campo.id}
+                  style={[styles.campoCard, { backgroundColor: c.input, borderColor: c.bordeInput, borderLeftColor: c.boton }]}
+                >
+                  <View style={styles.campoIconRow}>
+                    <View style={[styles.campoIcon, { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` }]}>
+                      <Text style={styles.campoIconText}>🏟</Text>
+                    </View>
+                    <View style={styles.campoTexts}>
+                      <Text style={[styles.campoNombre, { color: c.texto }]}>{campo.name}</Text>
+                      <Text style={[styles.campoDireccion, { color: c.subtexto }]}>{campo.address}</Text>
+                    </View>
+                  </View>
+
+                  <TouchableOpacity
+                    style={[styles.btnComoLlegar, { backgroundColor: c.boton }]}
+                    onPress={() => abrirMaps(campo)}
+                  >
+                    <Text style={styles.btnComoLlegarText}>📍 Cómo llegar</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )}
+
+        </ScrollView>
+      </ScreenContainer>
+    )
+  }
+
+  // ── VISTA GESTOR ──────────────────────────────────────────────────────────
   return (
+    <ScreenContainer>
     <View style={[styles.wrapper, { backgroundColor: c.fondo }]}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
 
@@ -187,15 +257,16 @@ export default function Campos() {
                   </View>
 
                   <View style={styles.campoActions}>
-                    {campo.mapUrl && (
-                      <TouchableOpacity
-                        style={[styles.actionButton, { backgroundColor: '#3b82f615', borderColor: '#3b82f630' }]}
-                        onPress={() => abrirMaps(campo.mapUrl)}
-                      >
-                        <Text style={[styles.actionButtonText, { color: '#3b82f6' }]}>🗺 Maps</Text>
-                      </TouchableOpacity>
-                    )}
+                    {/* Azul maps — sin equivalente semántico en el tema */}
+                    <TouchableOpacity
+                      style={[styles.actionButton, { backgroundColor: '#3b82f615', borderColor: '#3b82f630' }]}
+                      onPress={() => abrirMaps(campo)}
+                    >
+                      <Text style={[styles.actionButtonText, { color: '#3b82f6' }]}>🗺 Maps</Text>
+                    </TouchableOpacity>
+
                     {canToggle && (
+                      /* Ámbar advertencia — sin equivalente semántico en el tema */
                       <TouchableOpacity
                         style={[styles.actionButton, { backgroundColor: '#f59e0b12', borderColor: '#f59e0b30' }]}
                         onPress={() => toggleActivo(campo.id)}
@@ -203,8 +274,9 @@ export default function Campos() {
                         <Text style={[styles.actionButtonText, { color: '#f59e0b' }]}>Desactivar</Text>
                       </TouchableOpacity>
                     )}
-                    {/* ELIMINAR: solo presidente */}
+
                     {canDelete && (
+                      /* Rojo destructivo — sin equivalente semántico en el tema */
                       <TouchableOpacity
                         style={[styles.actionButton, { backgroundColor: '#ef444410', borderColor: '#ef444430' }]}
                         onPress={() => eliminarCampo(campo.id)}
@@ -239,6 +311,7 @@ export default function Campos() {
                         <Text style={{ color: c.boton, fontSize: 12, fontWeight: 'bold' }}>Activar</Text>
                       </TouchableOpacity>
                       {canDelete && (
+                        /* Rojo destructivo — sin equivalente semántico en el tema */
                         <TouchableOpacity
                           onPress={() => eliminarCampo(campo.id)}
                           style={[styles.miniButton, { backgroundColor: '#ef444415' }]}
@@ -253,7 +326,7 @@ export default function Campos() {
             </View>
           </View>
         )}
-        
+
       </ScrollView>
 
       {/* MODAL AÑADIR CAMPO */}
@@ -263,7 +336,7 @@ export default function Campos() {
 
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitulo, { color: c.texto }]}>📍 Añadir campo</Text>
-              <TouchableOpacity onPress={cerrarModal}>
+              <TouchableOpacity onPress={cerrarModal} disabled={saving}>
                 <Text style={{ color: c.subtexto, fontSize: 20 }}>✕</Text>
               </TouchableOpacity>
             </View>
@@ -277,6 +350,7 @@ export default function Campos() {
                   onChangeText={setNombre}
                   placeholder="Campo Municipal..."
                   placeholderTextColor={c.subtexto}
+                  editable={!saving}
                 />
               </View>
               <View>
@@ -287,10 +361,11 @@ export default function Campos() {
                   onChangeText={setDireccion}
                   placeholder="Calle..."
                   placeholderTextColor={c.subtexto}
+                  editable={!saving}
                 />
               </View>
               <View>
-                <Text style={[styles.label, { color: c.subtexto }]}>Enlace Google Maps</Text>
+                <Text style={[styles.label, { color: c.subtexto }]}>Enlace Google Maps <Text style={{ fontStyle: 'italic' }}>(opcional)</Text></Text>
                 <TextInput
                   style={[styles.input, { backgroundColor: c.input, borderColor: c.bordeInput, color: c.texto }]}
                   value={mapsUrl}
@@ -298,24 +373,29 @@ export default function Campos() {
                   placeholder="https://goo.gl/maps/..."
                   placeholderTextColor={c.subtexto}
                   autoCapitalize="none"
+                  editable={!saving}
                 />
               </View>
               <TouchableOpacity
-                style={[styles.btnGuardar, { backgroundColor: c.boton }]}
+                style={[styles.btnGuardar, { backgroundColor: saving ? c.bordeInput : c.boton }]}
                 onPress={guardarCampo}
+                disabled={saving}
               >
-                <Text style={styles.btnGuardarText}>Guardar campo</Text>
+                {saving ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.btnGuardarText}>Guardar campo</Text>
+                )}
               </TouchableOpacity>
             </View>
+
           </Pressable>
         </Pressable>
       </Modal>
     </View>
+    </ScreenContainer>
   )
 }
-
-// Necesario para eliminar en web
-const { Platform } = require('react-native')
 
 const styles = StyleSheet.create({
   wrapper: { flex: 1 },
@@ -340,6 +420,8 @@ const styles = StyleSheet.create({
   actionButton: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, borderWidth: 1 },
   actionButtonText: { fontSize: 12, fontWeight: '700' },
   miniButton: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
+  btnComoLlegar: { paddingVertical: 12, borderRadius: 12, alignItems: 'center' },
+  btnComoLlegarText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   modalCard: { borderTopLeftRadius: 25, borderTopRightRadius: 25, padding: 25, borderWidth: 1, borderBottomWidth: 0 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },

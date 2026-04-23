@@ -6,6 +6,7 @@ import {
 import { apiFetch } from "../../lib/api";
 import { useAuthStore } from "../../lib/store";
 import { useTheme } from "../../lib/useTheme";
+import ScreenContainer from "../../components/ScreenContainer";
 
 interface CalendarEvent {
   id: number;
@@ -184,8 +185,9 @@ export default function Calendario() {
   };
 
   return (
+    <ScreenContainer>
     <View style={[styles.wrapper, { backgroundColor: c.fondo }]}>
-      
+
       {/* CABECERA */}
       <View style={styles.headerRow}>
         <View>
@@ -378,6 +380,7 @@ export default function Calendario() {
       </Modal>
 
     </View>
+    </ScreenContainer>
   );
 }
 

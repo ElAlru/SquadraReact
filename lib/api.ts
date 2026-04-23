@@ -1,6 +1,6 @@
 import { useAuthStore } from './store'; 
 
-const API_URL = 'https://squadraapi.onrender.com';
+const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://squadraapi.onrender.com';
 
 export async function apiFetch(endpoint: string, options: any = {}) {
   try {

@@ -14,9 +14,8 @@ import {
 
 // 🟢 IMPORTACIONES CRUCIALES
 import { isEmpty, isValidEmail } from "../../lib/helper";
-import { supabase } from "../../lib/supabase";
+import { useAuthStore } from "../../lib/store";
 import { useTheme } from "../../lib/useTheme";
-import { useAuthStore } from "../../lib/store"; // 👈 Esta es la ruta correcta según tu PC
 
 export default function Login() {
   const c = useTheme();
@@ -35,14 +34,14 @@ export default function Login() {
     if (!isValidEmail(email)) {
       Alert.alert(
         t("common.error", "Error"),
-        t("login.errorEmail", "Introduce un email válido.")
+        t("login.errorEmail", "Introduce un email válido."),
       );
       return false;
     }
     if (isEmpty(password)) {
       Alert.alert(
         t("common.error", "Error"),
-        t("login.errorPassword", "La contraseña es obligatoria.")
+        t("login.errorPassword", "La contraseña es obligatoria."),
       );
       return false;
     }
@@ -54,34 +53,34 @@ export default function Login() {
     setIsLoading(true);
 
     try {
-      // 🟢 1. Llamamos a TU backend, no a Supabase directamente
-      const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://squadraapi.onrender.com';
+      // Llamamos a TU backend, no a Supabase directamente
+      const API_URL =
+        process.env.EXPO_PUBLIC_API_URL || "https://squadraapi.onrender.com";
 
       const response = await fetch(`${API_URL}/auth/login`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          "Content-Type": "application/json",
+          Accept: "application/json",
         },
         body: JSON.stringify({
           email: email.trim(),
-          password: password
+          password: password,
         }),
       });
 
-      // 🟢 2. Si las credenciales fallan
+      // Si las credenciales fallan
       if (!response.ok) {
         setIsLoading(false);
         Alert.alert(
           "Acceso denegado",
-          "El correo y/o la contraseña son erróneos."
+          "El correo y/o la contraseña son erróneos.",
         );
         return;
       }
 
-      // 🟢 3. Si todo va bien, leemos el AuthResponse de tu Java
+      // Si todo va bien, leemos el AuthResponse de tu Java
       const data = await response.json();
-      console.log("✅ Login exitoso en API Java");
 
       const userProfile = {
         userId: data.userId,
@@ -91,18 +90,17 @@ export default function Login() {
         phone: data.phone,
         docType: data.docType,
         docNumber: data.docNumber,
-        photoUrl: data.photoUrl
+        photoUrl: data.photoUrl,
       };
-      
-      // 🟢 4. Guardamos en el store global
-      setAuth(data.token, userProfile);
-      
-      // Dependiendo de cómo tengas tu _layout, quizás necesites forzar la navegación:
-      router.replace('/unirse'); 
 
+      // Guardamos en el store global
+      setAuth(data.token, userProfile);
     } catch (err) {
       console.error("Error inesperado en login:", err);
-      Alert.alert("Error de conexión", "No hemos podido conectar con el servidor.");
+      Alert.alert(
+        "Error de conexión",
+        "No hemos podido conectar con el servidor.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -127,7 +125,9 @@ export default function Login() {
       </View>
 
       {/* Header */}
-      <Text style={[styles.title, { color: c.texto }]}>{t("login.title", "Bienvenido")}</Text>
+      <Text style={[styles.title, { color: c.texto }]}>
+        {t("login.title", "Bienvenido")}
+      </Text>
       <Text style={[styles.subtitle, { color: c.subtexto }]}>
         {t("login.subtitle", "Entra en tu zona de juego")}
       </Text>
@@ -177,6 +177,8 @@ export default function Login() {
           autoCapitalize="none"
           autoCorrect={false}
           editable={!isLoading}
+          onSubmitEditing={handleLogin}
+          returnKeyType="go"
         />
         <TouchableOpacity
           style={[
@@ -225,7 +227,9 @@ export default function Login() {
         onPress={() => router.push("/registro")}
         disabled={isLoading}
       >
-        <Text style={{ color: c.subtexto }}>{t("login.noAccount", "¿No tienes cuenta?")} </Text>
+        <Text style={{ color: c.subtexto }}>
+          {t("login.noAccount", "¿No tienes cuenta?")}{" "}
+        </Text>
         <Text style={[styles.link, { color: c.boton }]}>
           {t("login.registerLink", "Regístrate aquí")}
         </Text>
