@@ -11,6 +11,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useColorScheme,
   View,
 } from "react-native";
 import {
@@ -22,6 +23,7 @@ import {
 import { supabase } from "../../lib/supabase";
 import { useAuthStore } from "../../lib/store";
 import { useTheme } from "../../lib/useTheme";
+import LogoSimbolo from "../../components/LogoSimbolo";
 
 type DocType = "DNI" | "NIE" | "PASSPORT";
 
@@ -52,6 +54,9 @@ export default function Register() {
   const c = useTheme();
   const { t } = useTranslation();
   const setAuth = useAuthStore((state) => state.setAuth);
+  const themeMode = useAuthStore((s: any) => s.themeMode);
+  const colorScheme = useColorScheme();
+  const isDark = themeMode === "dark" || (themeMode === "auto" && colorScheme === "dark");
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -279,13 +284,28 @@ export default function Register() {
   const mismatch = confirmPassword !== "" && confirmPassword !== password;
 
   return (
-    <ScrollView
-      contentContainerStyle={[styles.container, { backgroundColor: c.fondo }]}
-      keyboardShouldPersistTaps="handled"
-    >
-      <Text style={styles.brand}>SQUADRA</Text>
+    <View style={[styles.root, { backgroundColor: c.fondo }]}>
+      <LogoSimbolo size={700} color="#ffc06d" style={styles.watermark} />
 
-      <Text style={[styles.title, { color: c.texto }]}>
+      <ScrollView
+        contentContainerStyle={styles.outer}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.formContainer}>
+
+          <View style={styles.brandBlock}>
+            <LogoSimbolo size={60} color="#ffc06d" style={{ alignSelf: "center" }} />
+            <Image
+              source={
+                isDark
+                  ? require("../../assets/images/titulo-squadra-dark.png")
+                  : require("../../assets/images/titulo-squadra.png")
+              }
+              style={styles.imgTitulo}
+            />
+          </View>
+
+          <Text style={[styles.title, { color: c.texto }]}>
         {t("register.title")}
       </Text>
       <Text style={[styles.subtitle, { color: c.subtexto }]}>
@@ -559,23 +579,40 @@ export default function Register() {
           {t("register.loginLink")}
         </Text>
       </TouchableOpacity>
-    </ScrollView>
+
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    padding: 24,
-    paddingTop: 60,
-    paddingBottom: 40,
+  root: { flex: 1 },
+  watermark: {
+    position: "absolute",
+    top: "50%",
+    left: "50%",
+    transform: [{ translateX: -350 }, { translateY: -350 }],
+    opacity: 0.06,
   },
-  brand: {
-    fontSize: 13,
-    fontWeight: "bold",
-    color: "#C9A84C",
-    letterSpacing: 4,
-    marginBottom: 12,
+  outer: { flexGrow: 1, justifyContent: "center" },
+  formContainer: {
+    maxWidth: 420,
+    width: "100%",
+    alignSelf: "center",
+    paddingHorizontal: 24,
+    paddingVertical: 32,
+  },
+  brandBlock: {
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 20,
+  },
+  imgTitulo: {
+    width: "55%",
+    height: 36,
+    resizeMode: "contain",
+    alignSelf: "center",
   },
   title: {
     fontSize: 28,

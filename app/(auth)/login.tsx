@@ -4,32 +4,43 @@ import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  useColorScheme,
   View,
 } from "react-native";
 
-// 🟢 IMPORTACIONES CRUCIALES
 import { isEmpty, isValidEmail } from "../../lib/helper";
 import { useAuthStore } from "../../lib/store";
-import { useTheme } from "../../lib/useTheme";
+import LogoSimbolo from "../../components/LogoSimbolo";
 
 export default function Login() {
-  const c = useTheme();
   const { t } = useTranslation();
-
-  // Accedemos a la función del store para guardar la sesión
   const setAuth = useAuthStore((state) => state.setAuth);
+  const themeMode = useAuthStore((s: any) => s.themeMode);
+  const colorScheme = useColorScheme();
+
+  // Resuelve si el tema activo es oscuro (respeta modo 'auto' del dispositivo)
+  const isDark = themeMode === "dark" || (themeMode === "auto" && colorScheme === "dark");
+
+  // Colores básicos derivados del tema
+  const fondo      = isDark ? "#1a1a1a" : "#ffffff";
+  const texto      = isDark ? "#f1f5f9" : "#111827";
+  const subtexto   = isDark ? "#94a3b8" : "#6b7280";
+  const input      = isDark ? "#27272a" : "#f9fafb";
+  const bordeInput = isDark ? "#3f3f46" : "#e5e7eb";
+  const boton      = "#16a34a";
+  const botonTexto = "#ffffff";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  // VALIDACIÓN LOCAL
   const validateFields = (): boolean => {
     if (!isValidEmail(email)) {
       Alert.alert(
@@ -53,7 +64,6 @@ export default function Login() {
     setIsLoading(true);
 
     try {
-      // Llamamos a TU backend, no a Supabase directamente
       const API_URL =
         process.env.EXPO_PUBLIC_API_URL || "https://squadraapi.onrender.com";
 
@@ -69,7 +79,6 @@ export default function Login() {
         }),
       });
 
-      // Si las credenciales fallan
       if (!response.ok) {
         setIsLoading(false);
         Alert.alert(
@@ -79,10 +88,9 @@ export default function Login() {
         return;
       }
 
-      // Si todo va bien, leemos el AuthResponse de tu Java
       const data = await response.json();
 
-      const userProfile = {
+      setAuth(data.token, {
         userId: data.userId,
         email: data.email,
         firstName: data.firstName,
@@ -91,10 +99,7 @@ export default function Login() {
         docType: data.docType,
         docNumber: data.docNumber,
         photoUrl: data.photoUrl,
-      };
-
-      // Guardamos en el store global
-      setAuth(data.token, userProfile);
+      });
     } catch (err) {
       console.error("Error inesperado en login:", err);
       Alert.alert(
@@ -107,167 +112,167 @@ export default function Login() {
   };
 
   return (
-    <ScrollView
-      contentContainerStyle={[styles.container, { backgroundColor: c.fondo }]}
-      keyboardShouldPersistTaps="handled"
-    >
-      {/* Brand */}
-      <Text style={styles.brand}>SQUADRA</Text>
-
-      {/* Escudo */}
-      <View
-        style={[
-          styles.shield,
-          { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}40` },
-        ]}
-      >
-        <Text style={{ fontSize: 28 }}>🛡️</Text>
-      </View>
-
-      {/* Header */}
-      <Text style={[styles.title, { color: c.texto }]}>
-        {t("login.title", "Bienvenido")}
-      </Text>
-      <Text style={[styles.subtitle, { color: c.subtexto }]}>
-        {t("login.subtitle", "Entra en tu zona de juego")}
-      </Text>
-
-      {/* Email */}
-      <Text style={[styles.label, { color: c.subtexto }]}>
-        {t("login.email", "Email")} *
-      </Text>
-      <TextInput
-        style={[
-          styles.input,
-          {
-            backgroundColor: c.input,
-            borderColor: c.bordeInput,
-            color: c.texto,
-          },
-        ]}
-        placeholder={t("login.emailPlaceholder", "ejemplo@squadra.com")}
-        placeholderTextColor={c.subtexto}
-        value={email}
-        onChangeText={setEmail}
-        keyboardType="email-address"
-        autoCapitalize="none"
-        autoCorrect={false}
-        editable={!isLoading}
+    <View style={[styles.root, { backgroundColor: fondo }]}>
+      {/* Marca de agua centrada en pantalla */}
+      <LogoSimbolo
+        size={700}
+        color="#ffc06d"
+        style={{
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          transform: [{ translateX: -350 }, { translateY: -350 }],
+          opacity: 0.06,
+        }}
       />
 
-      {/* Contraseña */}
-      <Text style={[styles.label, { color: c.subtexto }]}>
-        {t("login.password", "Contraseña")} *
-      </Text>
-      <View style={styles.passwordContainer}>
-        <TextInput
-          style={[
-            styles.passwordInput,
-            {
-              backgroundColor: c.input,
-              borderColor: c.bordeInput,
-              color: c.texto,
-            },
-          ]}
-          placeholder={t("login.passwordPlaceholder", "••••••••")}
-          placeholderTextColor={c.subtexto}
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry={!showPassword}
-          autoCapitalize="none"
-          autoCorrect={false}
-          editable={!isLoading}
-          onSubmitEditing={handleLogin}
-          returnKeyType="go"
-        />
-        <TouchableOpacity
-          style={[
-            styles.eyeButton,
-            { backgroundColor: c.input, borderColor: c.bordeInput },
-          ]}
-          onPress={() => setShowPassword(!showPassword)}
-          disabled={isLoading}
-        >
-          <Text style={{ fontSize: 16 }}>{showPassword ? "🙈" : "👁️"}</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Olvidaste contraseña */}
-      <TouchableOpacity
-        style={styles.forgotContainer}
-        onPress={() => router.push("/recuperar-password")}
-        disabled={isLoading}
+      <ScrollView
+        contentContainerStyle={styles.outer}
+        keyboardShouldPersistTaps="handled"
       >
-        <Text style={[styles.forgotText, { color: c.boton }]}>
-          {t("login.forgotPassword", "¿Olvidaste tu contraseña?")}
-        </Text>
-      </TouchableOpacity>
+        <View style={styles.formContainer}>
 
-      {/* Botón acceder */}
-      <TouchableOpacity
-        style={[
-          styles.button,
-          { backgroundColor: isLoading ? c.bordeInput : c.boton },
-        ]}
-        onPress={handleLogin}
-        disabled={isLoading}
-      >
-        {isLoading ? (
-          <ActivityIndicator color={c.botonTexto} />
-        ) : (
-          <Text style={[styles.buttonText, { color: c.botonTexto }]}>
-            {t("login.button", "Acceder")}
+          {/* Logo + títulos */}
+          <LogoSimbolo size={80} color="#ffc06d" style={styles.logo} />
+
+          <Image
+            source={
+              isDark
+                ? require("../../assets/images/titulo-squadra-dark.png")
+                : require("../../assets/images/titulo-squadra.png")
+            }
+            style={styles.imgTitulo}
+          />
+
+          <Image
+            source={
+              isDark
+                ? require("../../assets/images/subtitulo-squadra-dark.png")
+                : require("../../assets/images/subtitulo-squadra.png")
+            }
+            style={styles.imgSubtitulo}
+          />
+
+          {/* Email */}
+          <Text style={[styles.label, { color: subtexto }]}>
+            {t("login.email", "Email")} *
           </Text>
-        )}
-      </TouchableOpacity>
+          <TextInput
+            style={[styles.input, { backgroundColor: input, borderColor: bordeInput, color: texto }]}
+            placeholder={t("login.emailPlaceholder", "ejemplo@squadra.com")}
+            placeholderTextColor={subtexto}
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={!isLoading}
+          />
 
-      {/* Link registro */}
-      <TouchableOpacity
-        style={styles.linkContainer}
-        onPress={() => router.push("/registro")}
-        disabled={isLoading}
-      >
-        <Text style={{ color: c.subtexto }}>
-          {t("login.noAccount", "¿No tienes cuenta?")}{" "}
-        </Text>
-        <Text style={[styles.link, { color: c.boton }]}>
-          {t("login.registerLink", "Regístrate aquí")}
-        </Text>
-      </TouchableOpacity>
-    </ScrollView>
+          {/* Contraseña */}
+          <Text style={[styles.label, { color: subtexto }]}>
+            {t("login.password", "Contraseña")} *
+          </Text>
+          <View style={styles.passwordRow}>
+            <TextInput
+              style={[styles.passwordInput, { backgroundColor: input, borderColor: bordeInput, color: texto }]}
+              placeholder={t("login.passwordPlaceholder", "••••••••")}
+              placeholderTextColor={subtexto}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!isLoading}
+              onSubmitEditing={handleLogin}
+              returnKeyType="go"
+            />
+            <TouchableOpacity
+              style={[styles.eyeButton, { backgroundColor: input, borderColor: bordeInput }]}
+              onPress={() => setShowPassword(!showPassword)}
+              disabled={isLoading}
+            >
+              <Text style={{ fontSize: 16 }}>{showPassword ? "🙈" : "👁️"}</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* ¿Olvidaste tu contraseña? */}
+          <TouchableOpacity
+            style={styles.forgotContainer}
+            onPress={() => router.push("/recuperar-password")}
+            disabled={isLoading}
+          >
+            <Text style={[styles.forgotText, { color: boton }]}>
+              {t("login.forgotPassword", "¿Olvidaste tu contraseña?")}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Acceder */}
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: isLoading ? bordeInput : boton }]}
+            onPress={handleLogin}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <ActivityIndicator color={botonTexto} />
+            ) : (
+              <Text style={[styles.buttonText, { color: botonTexto }]}>
+                {t("login.button", "Acceder")}
+              </Text>
+            )}
+          </TouchableOpacity>
+
+          {/* Registro */}
+          <TouchableOpacity
+            style={styles.linkContainer}
+            onPress={() => router.push("/registro")}
+            disabled={isLoading}
+          >
+            <Text style={{ color: subtexto }}>
+              {t("login.noAccount", "¿No tienes cuenta?")}{" "}
+            </Text>
+            <Text style={[styles.link, { color: boton }]}>
+              {t("login.registerLink", "Regístrate aquí")}
+            </Text>
+          </TouchableOpacity>
+
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
+    flex: 1,
+  },
+  outer: {
     flexGrow: 1,
-    padding: 24,
-    paddingTop: 80,
-    paddingBottom: 40,
-  },
-  brand: {
-    fontSize: 13,
-    fontWeight: "bold",
-    color: "#C9A84C",
-    letterSpacing: 4,
-    marginBottom: 32,
-  },
-  shield: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    alignItems: "center",
     justifyContent: "center",
-    marginBottom: 20,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: "bold",
+  formContainer: {
+    maxWidth: 420,
+    width: "100%",
+    alignSelf: "center",
+    paddingHorizontal: 24,
+    paddingVertical: 32,
+  },
+  logo: {
+    alignSelf: "center",
+    marginBottom: 8,
+  },
+  imgTitulo: {
+    width: '55%',
+    height: 40,
+    resizeMode: "contain",
+    alignSelf: "center",
     marginBottom: 4,
   },
-  subtitle: {
-    fontSize: 14,
+  imgSubtitulo: {
+    width: '65%',
+    height: 30,
+    resizeMode: "contain",
+    alignSelf: "center",
     marginBottom: 32,
   },
   label: {
@@ -282,7 +287,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     fontSize: 15,
   },
-  passwordContainer: {
+  passwordRow: {
     flexDirection: "row",
     marginBottom: 8,
     gap: 8,

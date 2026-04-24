@@ -2,10 +2,12 @@ import { router, useFocusEffect } from "expo-router";
 import { useState, useCallback } from "react";
 import {
   ActivityIndicator,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
+  useColorScheme,
   View,
   RefreshControl,
   Alert,
@@ -27,6 +29,9 @@ const ROL_LABEL: Record<string, string> = {
 export default function SelectorIndex() {
   const c = useTheme();
   const { setActiveClub, setSeason } = useAuthStore();
+  const themeMode = useAuthStore((s: any) => s.themeMode);
+  const colorScheme = useColorScheme();
+  const isDark = themeMode === "dark" || (themeMode === "auto" && colorScheme === "dark");
 
   const [clubes, setClubes] = useState<any[]>([]);
   const [requests, setRequests] = useState<any[]>([]);
@@ -79,7 +84,14 @@ export default function SelectorIndex() {
       contentContainerStyle={[styles.container, { backgroundColor: c.fondo }]}
       refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadAllData(true)} tintColor={c.boton} />}
     >
-      <Text style={styles.brand}>SQUADRA</Text>
+      <Image
+        source={
+          isDark
+            ? require("../../assets/images/titulo-squadra-dark.png")
+            : require("../../assets/images/titulo-squadra.png")
+        }
+        style={styles.brandImg}
+      />
       <Text style={[styles.title, { color: c.texto }]}>Tus clubes</Text>
 
       {isLoading && !isRefreshing ? (
@@ -138,7 +150,7 @@ export default function SelectorIndex() {
 
 const styles = StyleSheet.create({
   container: { flexGrow: 1, padding: 24, paddingTop: 60 },
-  brand: { fontSize: 14, fontWeight: "bold", color: "#C9A84C", letterSpacing: 5, marginBottom: 30 },
+  brandImg: { width: "45%", height: 32, resizeMode: "contain", alignSelf: "center", marginBottom: 30 },
   title: { fontSize: 28, fontWeight: "800", marginBottom: 30 },
   content: { gap: 16 },
   clubCard: { flexDirection: "row", alignItems: "center", borderRadius: 16, borderWidth: 1, padding: 16, gap: 16 },

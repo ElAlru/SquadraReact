@@ -20,5 +20,5 @@ export default function ScreenContainer({ children, isFluid = false }: Props) {
 
 const styles = StyleSheet.create({
   flex:         { flex: 1 },
-  webContainer: { maxWidth: 560, width: '100%', alignSelf: 'center', flex: 1 },
+  webContainer: { width: '100%', flex: 1 },
 });
