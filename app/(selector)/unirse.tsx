@@ -21,31 +21,45 @@ export default function Unirse() {
   const [isLoading, setIsLoading] = useState(false)
 
   const handleJoin = async () => {
-    const cleanCode = codigo.toUpperCase().trim()
-    if (!cleanCode || cleanCode.length !== 6) return
-    setIsLoading(true)
+    const cleanCode = codigo.toUpperCase().trim();
+    if (!cleanCode || cleanCode.length !== 6) return;
+    setIsLoading(true);
+    
     try {
+      console.log("➡️ Enviando petición con código:", cleanCode);
       const res = await apiFetch("/api/clubs/join", {
         method: "POST",
         body: JSON.stringify({
           invitationCode: cleanCode,
           requestedRole: rolSeleccionado,
-          message: mensaje.trim() || null,
+          message: mensaje
         })
-      })
+      });
+      
       if (res.ok) {
-        setSent(true)
+        setSent(true);
       } else {
-        const errorText = await res.text()
-        Alert.alert("Ups", errorText || "Código no válido o ya eres miembro")
+        // Leemos la respuesta cruda del backend
+        const errorText = await res.text();
+        console.log("🚨 RESPUESTA DEL BACKEND (Error 400):", errorText);
+        
+        try {
+          // Intentamos sacarlo como JSON si viene bien formateado
+          const data = JSON.parse(errorText);
+          Alert.alert("Aviso", data.error || "No se pudo unir al club");
+        } catch (e) {
+          // Si es texto plano, lo mostramos tal cual
+          Alert.alert("Aviso", errorText);
+        }
       }
-    } catch (e) {
-      Alert.alert("Error", "Fallo de conexión")
+    } catch (err: any) {
+      console.log("💥 EXPLOSIÓN EN EL CÓDIGO (Catch):", err.message);
+      Alert.alert("Error", "Problema de conexión con el servidor.");
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
   }
-
+  
   if (sent) {
     return (
       <ScreenContainer>
