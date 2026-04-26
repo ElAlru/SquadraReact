@@ -9,12 +9,18 @@ import { useTheme } from "../../lib/useTheme";
 import ScreenContainer from "../../components/ScreenContainer";
 
 // Colores semánticos — no dependen del tema
-const COLOR_PELIGRO  = "#ef4444"; // rojo  — eliminar, multa pendiente
-const COLOR_EXITO    = "#16a34a"; // verde — multa pagada
-const COLOR_NEUTRAL  = "#64748B"; // gris  — multa perdonada
-const COLOR_AMARILLO = "#f59e0b"; // amarillo — advertencia
+const COLOR_PELIGRO  = "#ef4444"; 
+const COLOR_EXITO    = "#16a34a"; 
+const COLOR_NEUTRAL  = "#64748B"; 
+const COLOR_AMARILLO = "#f59e0b"; 
 
 type Tab = "ASISTENCIA" | "CONVOCATORIAS" | "STATS" | "MULTAS";
+
+interface Player {
+  id: number;
+  firstName: string;
+  lastName: string;
+}
 
 interface PlayerAttendanceItem {
   playerId: number;
@@ -22,6 +28,7 @@ interface PlayerAttendanceItem {
   lastName: string;
   attended: boolean | null;
   absenceReason: string | null;
+  positiveMark: boolean;
 }
 
 interface CallupEntry {
@@ -30,6 +37,8 @@ interface CallupEntry {
   lastName: string;
   status: "CALLED_UP" | "ABSENT" | "INJURED";
   absenceReason: string | null;
+  attendancePercentage?: number;
+  positiveMarksCount?: number;
 }
 
 interface StatsEntry {
@@ -76,6 +85,8 @@ export default function GestionCoach() {
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [loadingEvents, setLoadingEvents] = useState(false);
 
+  // Estados de datos
+  const [teamPlayers, setTeamPlayers] = useState<Player[]>([]);
   const [attendance, setAttendance] = useState<PlayerAttendanceItem[]>([]);
   const [callups, setCallups] = useState<CallupEntry[]>([]);
   const [stats, setStats] = useState<StatsEntry[]>([]);
@@ -89,6 +100,7 @@ export default function GestionCoach() {
 
   const [saving, setSaving] = useState(false);
 
+  // Estados modales
   const [fineModal, setFineModal] = useState(false);
   const [fineTarget, setFineTarget] = useState<{ id: number; name: string } | null>(null);
   const [fineReason, setFineReason] = useState("");
@@ -100,6 +112,22 @@ export default function GestionCoach() {
 
   // ── FETCH ──────────────────────────────────────────────────────────────────
 
+  // Carga la lista de equipos del club si el usuario es presidente
+  useEffect(() => {
+    if (!isPresident || !clubId) return;
+    apiFetch(`/api/club/equipos/${clubId}`)
+      .then(r => r.json())
+      .then((data: any[]) => {
+        const mapped = data
+          .filter((t: any) => t.isActive)
+          .map((t: any) => ({ id: t.id, label: `${t.category}${t.suffix ? " " + t.suffix : ""}` }));
+        setTeams(mapped);
+        if (!localTeamId && mapped.length > 0) setLocalTeamId(mapped[0].id);
+      })
+      .catch(() => {});
+  }, [isPresident, clubId]);
+
+  // Carga de eventos del equipo seleccionado
   const fetchEvents = useCallback(async () => {
     if (!localTeamId) return;
     setLoadingEvents(true);
@@ -120,6 +148,30 @@ export default function GestionCoach() {
 
   useEffect(() => { fetchEvents(); }, [fetchEvents]);
 
+  // Novedad: Cargar jugadores reales del equipo activo
+  useEffect(() => {
+    if (!localTeamId) return;
+    const fetchPlayers = async () => {
+      try {
+        const res = await apiFetch(`/api/teams/${localTeamId}/players?seasonLabel=${seasonLabel}&clubId=${clubId}`);
+        const data = await res.json();
+        setTeamPlayers(data);
+      } catch (error) {
+        console.error("Error cargando plantilla:", error);
+      }
+    };
+    fetchPlayers();
+  }, [localTeamId, seasonLabel, clubId]);
+
+  // Al cambiar de equipo, limpia los datos de la sesión anterior
+  useEffect(() => {
+    setSelectedEvent(null);
+    setAttendance([]);
+    setCallups([]);
+    setStats([]);
+    setFineTarget(null); // Limpiar selecciones previas
+  }, [localTeamId]);
+
   useEffect(() => {
     if (!selectedEvent) return;
     if (activeTab === "ASISTENCIA" && selectedEvent.type === "TRAINING") fetchAttendance();
@@ -129,35 +181,12 @@ export default function GestionCoach() {
 
   useEffect(() => { if (activeTab === "MULTAS") fetchFines(0); }, [activeTab]);
 
-  // Carga la lista de equipos del club si el usuario es presidente
-  useEffect(() => {
-    if (!isPresident || !clubId) return;
-    apiFetch(`/api/club/equipos/${clubId}`)
-      .then(r => r.json())
-      .then((data: any[]) => {
-        const mapped = data
-          .filter((t: any) => t.isActive)
-          .map((t: any) => ({ id: t.id, label: `${t.category}${t.suffix ? " " + t.suffix : ""}` }));
-        setTeams(mapped);
-        if (!localTeamId && mapped.length > 0) setLocalTeamId(mapped[0].id);
-      })
-      .catch(() => {});
-  }, [isPresident, clubId]);
-
-  // Al cambiar de equipo, limpia los datos de la sesión anterior
-  useEffect(() => {
-    setSelectedEvent(null);
-    setAttendance([]);
-    setCallups([]);
-    setStats([]);
-  }, [localTeamId]);
-
   const fetchAttendance = async () => {
     if (!selectedEvent) return;
     try {
       const res = await apiFetch(`/api/coach/training/${selectedEvent.id}/attendance?clubId=${clubId}`);
       const data = await res.json();
-      setAttendance(data.players);
+      setAttendance(data.players.map((p: any) => ({ ...p, positiveMark: p.positiveMark ?? false })));
     } catch {
       Alert.alert("Error", "No se pudo cargar la asistencia.");
     }
@@ -209,6 +238,7 @@ export default function GestionCoach() {
             playerId: p.playerId,
             attended: p.attended ?? false,
             absenceReason: p.absenceReason,
+            positiveMark: p.positiveMark,
           })),
         }),
       });
@@ -269,7 +299,10 @@ export default function GestionCoach() {
   };
 
   const handleCreateFine = async () => {
-    if (!fineTarget || !fineReason || !fineAmount) return;
+    if (!fineTarget || !fineReason || !fineAmount) {
+      Alert.alert("Aviso", "Por favor rellena todos los campos y selecciona un jugador.");
+      return;
+    }
     try {
       await apiFetch(`/api/coach/fines?clubId=${clubId}`, {
         method: "POST",
@@ -299,11 +332,20 @@ export default function GestionCoach() {
           ) : attendance.map((item, idx) => (
             <View key={item.playerId} style={[s.playerRow, { backgroundColor: c.input }]}>
               <Text style={[s.playerName, { color: c.texto }]}>{item.firstName} {item.lastName}</Text>
-              <Switch value={item.attended ?? false} onValueChange={(v) => {
-                const next = [...attendance];
-                next[idx].attended = v;
-                setAttendance(next);
-              }} />
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <TouchableOpacity onPress={() => {
+                  const next = [...attendance];
+                  next[idx].positiveMark = !next[idx].positiveMark;
+                  setAttendance(next);
+                }}>
+                  <Text style={{ fontSize: 20, opacity: item.positiveMark ? 1 : 0.3 }}>⭐</Text>
+                </TouchableOpacity>
+                <Switch value={item.attended ?? false} onValueChange={(v) => {
+                  const next = [...attendance];
+                  next[idx].attended = v;
+                  setAttendance(next);
+                }} />
+              </View>
             </View>
           ))}
           <TouchableOpacity
@@ -317,7 +359,7 @@ export default function GestionCoach() {
           </TouchableOpacity>
         </>
       ) : (
-        <Text style={[s.hintText, { color: c.subtexto }]}>Selecciona un entrenamiento.</Text>
+        <Text style={[s.hintText, { color: c.subtexto }]}>Selecciona un entrenamiento en el calendario superior.</Text>
       )}
     </View>
   );
@@ -330,7 +372,17 @@ export default function GestionCoach() {
             <Text style={[s.hintText, { color: c.subtexto }]}>Sin convocados aún.</Text>
           ) : callups.map((item, idx) => (
             <View key={item.playerId} style={[s.playerRow, { backgroundColor: c.input }]}>
-              <Text style={[s.playerName, { color: c.texto }]}>{item.firstName} {item.lastName}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.playerName, { color: c.texto }]}>{item.firstName} {item.lastName}</Text>
+                {(item.attendancePercentage != null || item.positiveMarksCount != null) && (
+                  <Text style={{ fontSize: 11, color: c.subtexto, marginTop: 2 }}>
+                    {[
+                      item.attendancePercentage != null ? `${item.attendancePercentage}% Asist.` : null,
+                      item.positiveMarksCount != null ? `⭐ ${item.positiveMarksCount}` : null,
+                    ].filter(Boolean).join(" | ")}
+                  </Text>
+                )}
+              </View>
               <View style={{ flexDirection: "row", gap: 4 }}>
                 {(["CALLED_UP", "ABSENT", "INJURED"] as const).map(st => (
                   <TouchableOpacity
@@ -364,65 +416,134 @@ export default function GestionCoach() {
           </TouchableOpacity>
         </>
       ) : (
-        <Text style={[s.hintText, { color: c.subtexto }]}>Selecciona un partido.</Text>
+        <Text style={[s.hintText, { color: c.subtexto }]}>Selecciona un partido en el calendario superior.</Text>
       )}
     </View>
   );
 
-  const renderStats = () => (
-    <View style={s.tabContent}>
-      {selectedEvent?.type === "MATCH" ? (
-        <>
-          {stats.length === 0 ? (
-            <Text style={[s.hintText, { color: c.subtexto }]}>Sin estadísticas aún.</Text>
-          ) : stats.map((item, idx) => (
-            <View
-              key={item.playerId}
-              style={[s.playerRow, { backgroundColor: c.input, flexDirection: "column", alignItems: "flex-start" }]}
-            >
-              <Text style={[s.playerName, { color: c.texto, marginBottom: 8 }]}>
-                {item.firstName} {item.lastName}
+  const renderStats = () => {
+    const isToday = selectedEvent
+      ? new Date(selectedEvent.startTime).toDateString() === new Date().toDateString()
+      : false;
+
+    return (
+      <View style={s.tabContent}>
+        {selectedEvent?.type === "MATCH" ? (
+          <>
+            {isToday && (
+              <Text style={{ color: COLOR_EXITO, fontWeight: "700", fontSize: 13, marginBottom: 10 }}>
+                ⚡ Modo Partido en Vivo
               </Text>
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
-                {([
-                  { label: "Goles",     field: "goals"         as const },
-                  { label: "Asist.",    field: "assists"       as const },
-                  { label: "Amarillas", field: "yellowCards"   as const },
-                  { label: "Rojas",     field: "redCards"      as const },
-                  { label: "Minutos",   field: "minutesPlayed" as const },
-                ]).map(({ label, field }) => (
-                  <View key={field} style={{ alignItems: "center", minWidth: 60 }}>
-                    <Text style={{ fontSize: 10, color: c.subtexto, marginBottom: 2 }}>{label}</Text>
-                    <TextInput
-                      style={[s.scoreInput, { borderColor: c.bordeInput, backgroundColor: c.fondo, color: c.texto }]}
-                      value={String(item[field])}
-                      keyboardType="numeric"
-                      onChangeText={(v) => {
-                        const next = [...stats];
-                        (next[idx] as any)[field] = Number(v) || 0;
-                        setStats(next);
-                      }}
-                    />
+            )}
+            {stats.length === 0 ? (
+              <Text style={[s.hintText, { color: c.subtexto }]}>Sin estadísticas aún.</Text>
+            ) : stats.map((item, idx) => (
+              <View
+                key={item.playerId}
+                style={[s.playerRow, { backgroundColor: c.input, flexDirection: "column", alignItems: "flex-start" }]}
+              >
+                <View style={{ flexDirection: "row", justifyContent: "space-between", width: "100%", marginBottom: 8 }}>
+                  <Text style={[s.playerName, { color: c.texto }]}>
+                    {item.firstName} {item.lastName}
+                  </Text>
+                  {isToday && (
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Text style={{ fontSize: 12, color: c.subtexto }}>Titular</Text>
+                      <Switch
+                        value={item.wasStarter}
+                        onValueChange={(v) => {
+                          const next = [...stats];
+                          next[idx].wasStarter = v;
+                          setStats(next);
+                        }}
+                      />
+                    </View>
+                  )}
+                </View>
+                {isToday ? (
+                  // LIVE MODE — contadores +/- sin teclado
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+                    {([
+                      { label: "Goles",     field: "goals"         as const },
+                      { label: "Asist.",    field: "assists"       as const },
+                      { label: "Amarillas", field: "yellowCards"   as const },
+                      { label: "Rojas",     field: "redCards"      as const },
+                      { label: "Minutos",   field: "minutesPlayed" as const },
+                    ]).map(({ label, field }) => (
+                      <View key={field} style={{ alignItems: "center", minWidth: 60 }}>
+                        <Text style={{ fontSize: 10, color: c.subtexto, marginBottom: 4 }}>{label}</Text>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                          <TouchableOpacity
+                            style={{ width: 28, height: 28, borderRadius: 6, backgroundColor: c.fondo, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: c.bordeInput }}
+                            onPress={() => {
+                              const next = [...stats];
+                              (next[idx] as any)[field] = Math.max(0, (next[idx] as any)[field] - 1);
+                              setStats(next);
+                            }}
+                          >
+                            <Text style={{ color: c.texto, fontWeight: "700" }}>−</Text>
+                          </TouchableOpacity>
+                          <Text style={{ minWidth: 20, textAlign: "center", color: c.texto, fontWeight: "700" }}>
+                            {item[field]}
+                          </Text>
+                          <TouchableOpacity
+                            style={{ width: 28, height: 28, borderRadius: 6, backgroundColor: c.fondo, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: c.bordeInput }}
+                            onPress={() => {
+                              const next = [...stats];
+                              (next[idx] as any)[field] = (next[idx] as any)[field] + 1;
+                              setStats(next);
+                            }}
+                          >
+                            <Text style={{ color: c.texto, fontWeight: "700" }}>+</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ))}
                   </View>
-                ))}
+                ) : (
+                  // EDIT MODE — TextInputs originales (partidos pasados)
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+                    {([
+                      { label: "Goles",     field: "goals"         as const },
+                      { label: "Asist.",    field: "assists"       as const },
+                      { label: "Amarillas", field: "yellowCards"   as const },
+                      { label: "Rojas",     field: "redCards"      as const },
+                      { label: "Minutos",   field: "minutesPlayed" as const },
+                    ]).map(({ label, field }) => (
+                      <View key={field} style={{ alignItems: "center", minWidth: 60 }}>
+                        <Text style={{ fontSize: 10, color: c.subtexto, marginBottom: 2 }}>{label}</Text>
+                        <TextInput
+                          style={[s.scoreInput, { borderColor: c.bordeInput, backgroundColor: c.fondo, color: c.texto }]}
+                          value={String(item[field])}
+                          keyboardType="numeric"
+                          onChangeText={(v) => {
+                            const next = [...stats];
+                            (next[idx] as any)[field] = Number(v) || 0;
+                            setStats(next);
+                          }}
+                        />
+                      </View>
+                    ))}
+                  </View>
+                )}
               </View>
-            </View>
-          ))}
-          <TouchableOpacity
-            style={[s.btnPrimary, { backgroundColor: c.boton, opacity: saving ? 0.6 : 1 }]}
-            onPress={handleSaveBulkStats}
-            disabled={saving}
-          >
-            <Text style={[s.btnPrimaryText, { color: c.botonTexto }]}>
-              {saving ? "Guardando..." : "💾 Guardar estadísticas"}
-            </Text>
-          </TouchableOpacity>
-        </>
-      ) : (
-        <Text style={[s.hintText, { color: c.subtexto }]}>Selecciona un partido.</Text>
-      )}
-    </View>
-  );
+            ))}
+            <TouchableOpacity
+              style={[s.btnPrimary, { backgroundColor: c.boton, opacity: saving ? 0.6 : 1 }]}
+              onPress={handleSaveBulkStats}
+              disabled={saving}
+            >
+              <Text style={[s.btnPrimaryText, { color: c.botonTexto }]}>
+                {saving ? "Guardando..." : "💾 Guardar estadísticas"}
+              </Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <Text style={[s.hintText, { color: c.subtexto }]}>Selecciona un partido en el calendario superior.</Text>
+        )}
+      </View>
+    );
+  };
 
   const renderFines = () => (
     <View style={s.tabContent}>
@@ -590,19 +711,37 @@ export default function GestionCoach() {
           <View style={[s.modalBox, { backgroundColor: c.fondo, borderColor: c.bordeInput }]}>
             <Text style={[s.modalTitle, { color: c.texto }]}>Nueva multa</Text>
 
-            <Text style={[s.modalLabel, { color: c.subtexto }]}>Jugador (ID)</Text>
-            <TextInput
-              style={[s.scoreInput, { borderColor: c.bordeInput, backgroundColor: c.input, color: c.texto }]}
-              placeholder="ID del jugador"
-              placeholderTextColor={c.subtexto}
-              keyboardType="numeric"
-              onChangeText={(v) => setFineTarget(v ? { id: Number(v), name: `Jugador ${v}` } : null)}
-            />
+            <Text style={[s.modalLabel, { color: c.subtexto }]}>Selecciona Jugador</Text>
+            {/* Nuevo: ScrollView con los jugadores del equipo */}
+            <View style={[s.playerSelectorBox, { borderColor: c.bordeInput, backgroundColor: c.input }]}>
+              {teamPlayers.length === 0 ? (
+                <Text style={{ padding: 12, color: c.subtexto, fontStyle: "italic" }}>
+                  Cargando plantilla o sin jugadores...
+                </Text>
+              ) : (
+                <ScrollView nestedScrollEnabled={true}>
+                  {teamPlayers.map(p => {
+                    const isSelected = fineTarget?.id === p.id;
+                    return (
+                      <TouchableOpacity
+                        key={p.id}
+                        style={[s.playerSelectorItem, { backgroundColor: isSelected ? c.boton : "transparent" }]}
+                        onPress={() => setFineTarget({ id: p.id, name: `${p.firstName} ${p.lastName}` })}
+                      >
+                        <Text style={{ color: isSelected ? c.botonTexto : c.texto, fontWeight: isSelected ? "700" : "400" }}>
+                          {p.firstName} {p.lastName}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              )}
+            </View>
 
             <Text style={[s.modalLabel, { color: c.subtexto }]}>Motivo</Text>
             <TextInput
               style={[s.scoreInput, { borderColor: c.bordeInput, backgroundColor: c.input, color: c.texto, height: 70, textAlignVertical: "top" }]}
-              placeholder="Describe el motivo..."
+              placeholder="Describe el motivo (llegar tarde, sin espinilleras...)"
               placeholderTextColor={c.subtexto}
               value={fineReason}
               onChangeText={setFineReason}
@@ -622,7 +761,7 @@ export default function GestionCoach() {
             <TouchableOpacity style={[s.btnPrimary, { backgroundColor: c.boton }]} onPress={handleCreateFine}>
               <Text style={[s.btnPrimaryText, { color: c.botonTexto }]}>Crear multa</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={s.btnSecondary} onPress={() => setFineModal(false)}>
+            <TouchableOpacity style={s.btnSecondary} onPress={() => { setFineModal(false); setFineTarget(null); }}>
               <Text style={{ color: c.subtexto, fontWeight: "600" }}>Cancelar</Text>
             </TouchableOpacity>
           </View>
@@ -674,4 +813,7 @@ const s = StyleSheet.create({
   modalBox:       { padding: 24, borderTopLeftRadius: 20, borderTopRightRadius: 20, borderWidth: 1, borderBottomWidth: 0 },
   modalTitle:     { fontSize: 20, fontWeight: "700", marginBottom: 15 },
   modalLabel:     { fontSize: 12, fontWeight: "600", marginBottom: 4 },
+
+  playerSelectorBox:  { borderWidth: 1, borderRadius: 8, marginBottom: 10, maxHeight: 130 },
+  playerSelectorItem: { padding: 12, borderBottomWidth: 1, borderBottomColor: "rgba(0,0,0,0.05)" },
 });

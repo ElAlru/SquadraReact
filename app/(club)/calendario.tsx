@@ -78,8 +78,8 @@ export default function Calendario() {
 
   const fetchTeams = useCallback(async () => {
     if (!isPresident) return;
-    try { 
-      const res = await apiFetch(`/api/teams?clubId=${clubId}`); 
+    try {
+      const res = await apiFetch(`/api/club/equipos/${clubId}`);
       const data = await res.json();
       setTeams(data);
     } catch {}
