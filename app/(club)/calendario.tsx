@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
   View, Text, TouchableOpacity, ScrollView, Modal, TextInput,
-  StyleSheet, Alert, ActivityIndicator, FlatList
+  StyleSheet, Alert, ActivityIndicator
 } from "react-native";
 import { apiFetch } from "../../lib/api";
 import { useAuthStore } from "../../lib/store";
@@ -19,7 +19,7 @@ interface CalendarEvent {
 }
 
 interface Team { id: number; category: string; suffix: string; }
-interface Field { id: number; name: string; } // 🟢 Interfaz para los campos
+interface Field { id: number; name: string; }
 
 const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 const DIAS_SEMANA = ["L", "M", "X", "J", "V", "S", "D"];
@@ -48,14 +48,17 @@ export default function Calendario() {
 
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
-  const [clubFields, setClubFields] = useState<Field[]>([]); // 🟢 Estado para los campos
+  const [clubFields, setClubFields] = useState<Field[]>([]); 
   
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(isPresident ? null : myTeamId ?? null);
   const [loading, setLoading] = useState(false);
   
   const [createModal, setCreateModal] = useState(false);
   const [createType, setCreateType] = useState<"TRAINING" | "MATCH">("TRAINING");
-  const [form, setForm] = useState<any>({ isHome: "true", matchType: "LEAGUE", location: "" });
+  const [form, setForm] = useState<any>({ isHome: "true", matchType: "LEAGUE", location: "", fieldId: null as number | null, endTime: "", recurring: false, recurringDays: [] as number[], recurringEndDate: "" });
+  
+  // 🟢 Estado para el mensaje de error visual tipo Login
+  const [errorMessage, setErrorMessage] = useState("");
 
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -85,12 +88,10 @@ export default function Calendario() {
     } catch {}
   }, [clubId, isPresident]);
 
-  // 🟢 Nueva petición para traer los campos activos del club
   const fetchFields = useCallback(async () => {
     if (!canCreate) return;
     try { 
-      // ⚠️ Ajusta "/api/fields" si en tu backend se llama "/api/campos" o similar
-      const res = await apiFetch(`/api/fields?clubId=${clubId}`); 
+      const res = await apiFetch(`/api/fields/club/${clubId}`);
       const data = await res.json();
       setClubFields(data);
     } catch {
@@ -103,42 +104,98 @@ export default function Calendario() {
 
   // ─── CREAR EVENTO ────────────────────────────────────────────────────────
   const handleCreateEvent = async () => {
+    setErrorMessage(""); // 🟢 Limpiamos errores previos al intentar crear
+
     const finalTeamId = isPresident ? form.teamId : myTeamId;
 
     if (!finalTeamId || !form.date || !form.time) {
-      Alert.alert("Atención", "La fecha, la hora y el equipo son obligatorios.");
+      setErrorMessage("La fecha, la hora y el equipo son obligatorios.");
+      return;
+    }
+    if (createType === "TRAINING" && !form.recurring && !form.endTime) {
+      setErrorMessage("La hora de fin es obligatoria para los entrenamientos.");
+      return;
+    }
+    if (createType === "TRAINING" && form.recurring && (!form.recurringDays?.length || !form.recurringEndDate)) {
+      setErrorMessage("Selecciona al menos un día y una fecha de fin para la repetición.");
       return;
     }
 
-    try {
-      // 🛠️ Combinamos Fecha + Hora para el Backend
-      const formattedDate = `${form.date}T${form.time}:00Z`;
-      
-      const endpoint = createType === "TRAINING" ? "/api/calendar/training" : "/api/calendar/match";
-      const body = createType === "TRAINING" 
-        ? { 
-            teamId: Number(finalTeamId), 
-            startTime: formattedDate, 
-            notes: form.notes 
-          }
-        : { 
-            teamId: Number(finalTeamId), 
-            opponentName: form.opponentName, 
-            matchDate: formattedDate, 
-            location: form.location, 
-            isHome: form.isHome === "true", 
-            matchType: form.matchType 
-          };
+    // 🟢 Función para convertir fecha de DD/MM/YYYY a YYYY-MM-DD para la base de datos
+    const formatToISO = (dateStr: string) => {
+      if (!dateStr) return "";
+      if (dateStr.includes("/")) {
+        const [day, month, year] = dateStr.split("/");
+        return `${year}-${month}-${day}`;
+      }
+      return dateStr; // Fallback por si lo escriben con guiones
+    };
 
-      await apiFetch(`${endpoint}?clubId=${clubId}`, { method: "POST", body: JSON.stringify(body) });
+    const isoDate = formatToISO(form.date);
+    const isoEndDate = formatToISO(form.recurringEndDate);
+
+    try {
+      const fieldIdValue = form.fieldId ? Number(form.fieldId) : null;
+      const locationValue = form.fieldId ? null : (form.location || null);
+
+      if (createType === "TRAINING" && form.recurring) {
+        const recurringBody = {
+          teamId: Number(finalTeamId),
+          startTime: `${form.time}:00`,
+          endTime: form.endTime ? `${form.endTime}:00` : `${form.time}:00`,
+          startDate: isoDate,
+          endDate: isoEndDate,
+          daysOfWeek: form.recurringDays,
+          fieldId: fieldIdValue,
+          location: locationValue,
+          notes: form.notes,
+        };
+        const res = await apiFetch(`/api/calendar/training/recurring?clubId=${clubId}`, { method: "POST", body: JSON.stringify(recurringBody) });
+        if (!res.ok) {
+          const msg = await res.text().catch(() => "");
+          throw new Error(`${res.status}: ${msg}`);
+        }
+      } else {
+        const formattedDate = `${isoDate}T${form.time}:00Z`;
+        const endpoint = createType === "TRAINING" ? "/api/calendar/training" : "/api/calendar/match";
+        const body = createType === "TRAINING"
+          ? {
+              teamId: Number(finalTeamId),
+              startTime: formattedDate,
+              endTime: form.endTime ? `${isoDate}T${form.endTime}:00Z` : formattedDate,
+              fieldId: fieldIdValue,
+              location: locationValue,
+              notes: form.notes,
+            }
+          : {
+              teamId: Number(finalTeamId),
+              opponentName: form.opponentName,
+              matchDate: formattedDate,
+              fieldId: fieldIdValue,
+              location: locationValue,
+              isHome: form.isHome === "true",
+              matchType: form.matchType,
+            };
+        const res = await apiFetch(`${endpoint}?clubId=${clubId}`, { method: "POST", body: JSON.stringify(body) });
+        if (!res.ok) {
+          const msg = await res.text().catch(() => "");
+          throw new Error(`${res.status}: ${msg}`);
+        }
+      }
+
       setCreateModal(false);
-      setForm({ isHome: "true", matchType: "LEAGUE", location: "" });
+      setForm({ isHome: "true", matchType: "LEAGUE", location: "", fieldId: null, endTime: "", recurring: false, recurringDays: [], recurringEndDate: "" });
       fetchEvents();
       Alert.alert("Éxito", "Evento programado correctamente.");
-    } catch { 
-      Alert.alert("Error", "No se pudo crear el evento."); 
+    } catch (err: any) {
+      setErrorMessage(err?.message || "Error de conexión. Verifica los datos e inténtalo de nuevo.");
     }
   };
+
+  const cerrarModal = () => {
+    setCreateModal(false);
+    setErrorMessage(""); // Limpiamos errores al cancelar
+  }
 
   // ─── GENERAR CUADRÍCULA ──────────────────────────────────────────────────
   const renderCalendarGrid = () => {
@@ -252,6 +309,7 @@ export default function Calendario() {
               📅 {new Date(item.startTime).toLocaleDateString("es-ES")} · 🕒 {new Date(item.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
             </Text>
             {item.location && <Text style={[styles.metaText, { color: c.subtexto, marginTop: 2 }]}>📍 {item.location}</Text>}
+            {item.teamName && <Text style={[styles.metaText, { color: c.subtexto, marginTop: 2 }]}>👥 {item.teamName}</Text>}
           </View>
         ))}
       </ScrollView>
@@ -264,7 +322,7 @@ export default function Calendario() {
       )}
 
       {/* MODAL CREAR EVENTO */}
-      <Modal visible={createModal} transparent animationType="slide">
+      <Modal visible={createModal} transparent animationType="slide" onRequestClose={cerrarModal}>
         <View style={styles.modalOverlay}>
           <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'flex-end' }} keyboardShouldPersistTaps="handled">
             <View style={[styles.modalBox, { backgroundColor: c.fondo }]}>
@@ -299,8 +357,9 @@ export default function Calendario() {
               <View style={{ flexDirection: 'row', gap: 10 }}>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.inputLabel, { color: c.texto }]}>Fecha *</Text>
+                  {/* 🟢 Placeholder en español */}
                   <TextInput style={[styles.textInput, { backgroundColor: c.input, color: c.texto, borderColor: c.bordeInput }]} 
-                    placeholder="2024-10-25" placeholderTextColor={c.subtexto} 
+                    placeholder="25/10/2024" placeholderTextColor={c.subtexto} 
                     onChangeText={v => setForm((f: any) => ({...f, date: v}))} />
                 </View>
                 <View style={{ flex: 1 }}>
@@ -311,19 +370,27 @@ export default function Calendario() {
                 </View>
               </View>
 
-              {/* 🟢 SECTOR UBICACIÓN INTEGRADO */}
+              {createType === "TRAINING" && (
+                <View>
+                  <Text style={[styles.inputLabel, { color: c.texto }]}>Hora fin</Text>
+                  <TextInput style={[styles.textInput, { backgroundColor: c.input, color: c.texto, borderColor: c.bordeInput }]}
+                    placeholder="20:00" placeholderTextColor={c.subtexto}
+                    value={form.endTime || ""}
+                    onChangeText={v => setForm((f: any) => ({ ...f, endTime: v }))} />
+                </View>
+              )}
+
               <Text style={[styles.inputLabel, { color: c.texto }]}>Ubicación / Campo</Text>
               
-              {/* Chips Rápidos de Campos del Club */}
               {clubFields.length > 0 && (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
                   {clubFields.map(campo => (
-                    <TouchableOpacity 
-                      key={campo.id} 
-                      style={[styles.chip, form.location === campo.name ? { backgroundColor: `${c.boton}20` } : { backgroundColor: c.input }]}
-                      onPress={() => setForm((f: any) => ({ ...f, location: campo.name }))}
+                    <TouchableOpacity
+                      key={campo.id}
+                      style={[styles.chip, form.fieldId === campo.id ? { backgroundColor: `${c.boton}20` } : { backgroundColor: c.input }]}
+                      onPress={() => setForm((f: any) => ({ ...f, fieldId: campo.id, location: campo.name }))}
                     >
-                      <Text style={[styles.chipText, form.location === campo.name ? { color: c.boton } : { color: c.subtexto }]}>
+                      <Text style={[styles.chipText, form.fieldId === campo.id ? { color: c.boton } : { color: c.subtexto }]}>
                         📍 {campo.name}
                       </Text>
                     </TouchableOpacity>
@@ -331,11 +398,10 @@ export default function Calendario() {
                 </ScrollView>
               )}
 
-              {/* Input manual enlazado */}
-              <TextInput style={[styles.textInput, { backgroundColor: c.input, color: c.texto, borderColor: c.bordeInput, marginBottom: 15 }]} 
-                placeholder="Escribe o selecciona arriba..." placeholderTextColor={c.subtexto} 
-                value={form.location || ""} 
-                onChangeText={v => setForm((f: any) => ({...f, location: v}))} />
+              <TextInput style={[styles.textInput, { backgroundColor: c.input, color: c.texto, borderColor: c.bordeInput, marginBottom: 15 }]}
+                placeholder="Escribe o selecciona arriba..." placeholderTextColor={c.subtexto}
+                value={form.location || ""}
+                onChangeText={v => setForm((f: any) => ({ ...f, location: v, fieldId: null }))} />
 
               {createType === "MATCH" && (
                 <>
@@ -365,8 +431,64 @@ export default function Calendario() {
                 </>
               )}
 
+              {createType === "TRAINING" && (
+                <>
+                  <TouchableOpacity
+                    onPress={() => setForm((f: any) => ({ ...f, recurring: !f.recurring }))}
+                    style={{ flexDirection: 'row', alignItems: 'center', marginTop: 14, marginBottom: 6 }}
+                  >
+                    <View style={{ width: 20, height: 20, borderRadius: 4, borderWidth: 1.5, borderColor: c.boton, backgroundColor: form.recurring ? c.boton : 'transparent', marginRight: 8, alignItems: 'center', justifyContent: 'center' }}>
+                      {form.recurring && <Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>✓</Text>}
+                    </View>
+                    <Text style={[styles.inputLabel, { color: c.texto, marginTop: 0, marginBottom: 0 }]}>Repetir semanalmente</Text>
+                  </TouchableOpacity>
+
+                  {form.recurring && (
+                    <>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 8, marginBottom: 12 }}>
+                        {[{label:'L',value:1},{label:'M',value:2},{label:'X',value:3},{label:'J',value:4},{label:'V',value:5},{label:'S',value:6},{label:'D',value:7}].map(day => {
+                          const sel = form.recurringDays?.includes(day.value);
+                          return (
+                            <TouchableOpacity
+                              key={day.value}
+                              onPress={() => setForm((f: any) => ({
+                                ...f,
+                                recurringDays: sel
+                                  ? f.recurringDays.filter((d: number) => d !== day.value)
+                                  : [...(f.recurringDays || []), day.value],
+                              }))}
+                              style={{ width: 36, height: 36, borderRadius: 18, borderWidth: 1.5, borderColor: sel ? c.boton : c.bordeInput, backgroundColor: sel ? `${c.boton}20` : c.input, alignItems: 'center', justifyContent: 'center' }}
+                            >
+                              <Text style={{ color: sel ? c.boton : c.subtexto, fontSize: 13, fontWeight: 'bold' }}>{day.label}</Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                      <Text style={[styles.inputLabel, { color: c.texto }]}>Repetir hasta</Text>
+                      {/* 🟢 Placeholder en español */}
+                      <TextInput
+                        style={[styles.textInput, { backgroundColor: c.input, color: c.texto, borderColor: c.bordeInput, marginBottom: 5 }]}
+                        placeholder="30/06/2025"
+                        placeholderTextColor={c.subtexto}
+                        value={form.recurringEndDate || ""}
+                        onChangeText={v => setForm((f: any) => ({ ...f, recurringEndDate: v }))}
+                      />
+                    </>
+                  )}
+                </>
+              )}
+
+              {/* 🟢 BANNER DE ERROR */}
+              {errorMessage !== "" && (
+                <View style={[styles.errorBanner, { backgroundColor: `${c.error}15`, borderColor: c.error }]}>
+                  <Text style={{ color: c.error, fontSize: 13, textAlign: 'center', fontWeight: '500' }}>
+                    ⚠️ {errorMessage}
+                  </Text>
+                </View>
+              )}
+
               <View style={{ flexDirection: 'row', gap: 10, marginTop: 15 }}>
-                <TouchableOpacity style={[styles.btnCrear, { backgroundColor: c.input, flex: 1, borderWidth: 1, borderColor: c.bordeInput }]} onPress={() => setCreateModal(false)}>
+                <TouchableOpacity style={[styles.btnCrear, { backgroundColor: c.input, flex: 1, borderWidth: 1, borderColor: c.bordeInput }]} onPress={cerrarModal}>
                   <Text style={[styles.btnCrearText, { color: c.texto }]}>Cancelar</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.btnCrear, { backgroundColor: c.boton, flex: 1 }]} onPress={handleCreateEvent}>
@@ -418,4 +540,5 @@ const styles = StyleSheet.create({
   chipModal: { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', borderWidth: 1 },
   btnCrear: { paddingVertical: 15, borderRadius: 12, alignItems: 'center' },
   btnCrearText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
+  errorBanner: { padding: 12, borderWidth: 1, borderRadius: 10, marginBottom: 16, marginTop: 10 }, // 🟢 Estilo para el error inline
 });

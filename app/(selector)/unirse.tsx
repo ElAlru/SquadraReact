@@ -94,7 +94,7 @@ export default function Unirse() {
         autoCapitalize="characters"
         maxLength={6}
         value={codigo}
-        onChangeText={setCodigo}
+        onChangeText={(text) => setCodigo(text.toUpperCase())}
       />
 
       <Text style={[styles.label, { color: c.subtexto }]}>¿Con qué rol quieres unirte?</Text>
