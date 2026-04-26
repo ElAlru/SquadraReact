@@ -85,7 +85,7 @@ export default function MiClub() {
   useEffect(() => {
     if (!selectedTeamId || !seasonLabel) return;
     setLoading(true);
-    apiFetch(`/api/club/detalle/${selectedTeamId}?seasonLabel=${seasonLabel}`)
+    apiFetch(`/api/club/detalle/${selectedTeamId}?clubId=${clubId}&seasonLabel=${seasonLabel}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((json) => setData(json))
       .catch(() => setData(null))
@@ -100,7 +100,7 @@ export default function MiClub() {
     setLoadingStats(true);
     try {
       const res = await apiFetch(
-        `/api/club/jugador/${jugador.id}/stats?teamId=${selectedTeamId}&seasonLabel=${seasonLabel}`,
+        `/api/club/jugador/${jugador.id}/stats?clubId=${clubId}&teamId=${selectedTeamId}&seasonLabel=${seasonLabel}`,
       );
       if (res.ok) setPlayerStats(await res.json());
     } catch {

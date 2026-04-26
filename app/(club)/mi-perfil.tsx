@@ -1,4 +1,5 @@
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native'
+import { router } from 'expo-router'
+import { ScrollView, View, Text, TouchableOpacity, StyleSheet } from 'react-native'
 import { useTranslation } from 'react-i18next'
 import { useTheme } from '../../lib/useTheme'
 import { useAuthStore } from '../../lib/store'
@@ -21,6 +22,7 @@ export default function MiPerfil() {
 
   return (
     <ScreenContainer>
+    <ScrollView contentContainerStyle={styles.scroll}>
 
       {/* Avatar y nombre */}
       <View style={styles.avatarWrapper}>
@@ -92,6 +94,20 @@ export default function MiPerfil() {
         </View>
       </View>
 
+      {/* Cambiar de club */}
+      <TouchableOpacity
+        style={[styles.card, styles.cambiarClubBtn, { borderColor: `${c.boton}40`, backgroundColor: `${c.boton}08` }]}
+        onPress={() => router.replace('/(selector)')}
+      >
+        <Text style={{ fontSize: 20 }}>🔄</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.cambiarClubTitle, { color: c.boton }]}>Cambiar de club</Text>
+          <Text style={[styles.cambiarClubSub, { color: c.subtexto }]}>Vuelve al selector sin cerrar sesión</Text>
+        </View>
+        <Text style={{ color: c.boton, fontSize: 20 }}>›</Text>
+      </TouchableOpacity>
+
+    </ScrollView>
     </ScreenContainer>
   )
 }
@@ -106,6 +122,7 @@ function Fila({ label, value, c }: { label: string; value: string; c: any }) {
 }
 
 const styles = StyleSheet.create({
+  scroll: { padding: 20, paddingBottom: 40, gap: 16 },
   avatarWrapper: { alignItems: 'center', paddingVertical: 24, gap: 6 },
   avatar: {
     width: 80,
@@ -141,4 +158,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
   },
   opcionText: { fontSize: 14, fontWeight: '500' },
+  cambiarClubBtn: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  cambiarClubTitle: { fontSize: 15, fontWeight: '700' },
+  cambiarClubSub: { fontSize: 12, marginTop: 1 },
 })

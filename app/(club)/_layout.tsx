@@ -106,15 +106,6 @@ function DrawerContent({ navigation }: { navigation: any }) {
       {/* Footer */}
       <View style={styles.drawerFooter}>
         <TouchableOpacity
-          onPress={() => {
-            navigation.closeDrawer();
-            router.replace('/(selector)');
-          }}
-          style={[styles.cerrarSesionBtn, { borderColor: `${c.boton}35`, backgroundColor: `${c.boton}10` }]}
-        >
-          <Text style={[styles.cerrarSesionText, { color: c.boton }]}>🔄 Cambiar de club</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
             onPress={handleLogout}
             style={[styles.cerrarSesionBtn, { borderColor: '#ef444435', backgroundColor: '#ef444410' }]}
         >
@@ -198,7 +189,9 @@ export default function ClubLayout() {
           </TouchableOpacity>
         ),
         headerTitle: () => (
-          <Text style={styles.headerBrand}>SQUADRA</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('inicio')}>
+            <Text style={styles.headerBrand}>SQUADRA</Text>
+          </TouchableOpacity>
         ),
         headerRight: () => (
           <TouchableOpacity

@@ -1,32 +1,41 @@
 import { Platform, StyleSheet, View } from 'react-native';
+import LogoSimbolo from './LogoSimbolo';
+import { useTheme } from '../lib/useTheme';
 
 interface Props {
   children: React.ReactNode;
   isFluid?: boolean;
 }
 
-export default function ScreenContainer({ children, isFluid = false }: Props) {
-  if (Platform.OS === 'web' && !isFluid) {
-    return (
-      <View style={styles.flex}>
-        <View style={styles.webContainer}>
-          {children}
-        </View>
+export default function ScreenContainer({ children }: Props) {
+  const c = useTheme();
+
+  return (
+    <View style={[styles.root, { backgroundColor: c.fondo }]}>
+      <LogoSimbolo
+        size={700}
+        color={c.colorMarca}
+        style={[styles.watermark, { opacity: c.marcaAguaOpacity }]}
+      />
+      <View style={styles.content}>
+        {children}
       </View>
-    );
-  }
-  return <View style={styles.flex}>{children}</View>;
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-  flex: { 
-    flex: 1 
-  },
-  webContainer: { 
-    width: '100%', 
+  root: {
     flex: 1,
-    // --- MEJORA AÑADIDA ---
-    maxWidth: 1024,      // Evita que la app se desparrame en monitores gigantes
-    alignSelf: 'center', // Lo centra perfectamente en la pantalla web
+  },
+  watermark: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: [{ translateX: -350 }, { translateY: -350 }],
+  },
+  content: {
+    flex: 1,
+    width: '100%',
   },
 });

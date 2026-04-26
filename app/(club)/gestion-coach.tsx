@@ -470,9 +470,9 @@ export default function GestionCoach() {
     <ScreenContainer>
     <View style={[s.container, { backgroundColor: c.fondo }]}>
       {/* Cabecera */}
-      <View style={[s.header, { backgroundColor: c.boton }]}>
-        <Text style={[s.headerTitle, { color: c.botonTexto }]}>Gestión Coach</Text>
-        <Text style={[s.headerSub, { color: `${c.botonTexto}cc` }]}>Temporada {seasonLabel}</Text>
+      <View style={[s.header, { backgroundColor: c.fondo }]}>
+        <Text style={[s.headerTitle, { color: c.texto }]}>Gestión Coach</Text>
+        <Text style={[s.headerSub, { color: c.subtexto }]}>Temporada {seasonLabel}</Text>
       </View>
 
       <ScrollView>

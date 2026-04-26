@@ -71,11 +71,6 @@ export default function Tablon() {
   const [refreshing, setRefreshing] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
-  // Selector de temporada (solo presidente)
-  const [seasons, setSeasons] = useState<string[]>([]);
-  const [selectedSeason, setSelectedSeason] = useState<string>(
-    seasonLabel || "",
-  );
 
   // Modal crear anuncio
   const [showModal, setShowModal] = useState(false);
@@ -85,28 +80,9 @@ export default function Tablon() {
   const [destinoEquipo, setDestinoEquipo] = useState<number | null>(null); // null = club global
   const [creando, setCreando] = useState(false);
 
-  // ── CARGAR TEMPORADAS (presidente) ────────────────────────────────────────
-  useEffect(() => {
-    if (isPresident && clubId) {
-      apiFetch(`/api/president/club/${clubId}/announcement-seasons`)
-        .then((res) => (res.ok ? res.json() : []))
-        .then((data: string[]) => {
-          setSeasons(data);
-          if (data.length > 0 && !data.includes(selectedSeason)) {
-            setSelectedSeason(data[0]);
-          } else if (!selectedSeason && seasonLabel) {
-            setSelectedSeason(seasonLabel);
-          }
-        })
-        .catch(() => {});
-    } else if (!selectedSeason && seasonLabel) {
-      setSelectedSeason(seasonLabel);
-    }
-  }, [isPresident, clubId, seasonLabel]);
-
   // ── CARGAR ANUNCIOS ───────────────────────────────────────────────────────
   const fetchAnuncios = useCallback(async () => {
-    const targetSeason = selectedSeason || seasonLabel;
+    const targetSeason = seasonLabel;
 
     if (!userId || !clubId || !targetSeason) {
       setLoading(false);
@@ -137,7 +113,7 @@ export default function Tablon() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [userId, clubId, activeTeamId, isPresident, selectedSeason, seasonLabel]);
+  }, [userId, clubId, activeTeamId, isPresident, seasonLabel]);
 
   useFocusEffect(
     useCallback(() => {
@@ -205,8 +181,7 @@ export default function Tablon() {
 
   // ── CREAR ANUNCIO ─────────────────────────────────────────────────────────
   const handleCrear = async () => {
-    // 🟢 Si no hay temporada seleccionada ni en el store, la calculamos automática
-    const targetSeason = selectedSeason || seasonLabel || getAutomaticSeason();
+    const targetSeason = seasonLabel || getAutomaticSeason();
 
     if (!nuevoTitulo.trim() || !nuevoContenido.trim()) {
       showAlert("Atención", "Título y contenido son obligatorios.");
@@ -232,11 +207,6 @@ export default function Tablon() {
       if (res.ok) {
         const nuevo = await res.json();
         setAnuncios((prev) => [nuevo, ...prev]);
-
-        // Si la temporada no estaba en nuestra lista de "filtros", la añadimos
-        if (!seasons.includes(targetSeason)) {
-          setSeasons((prev) => [targetSeason, ...prev]);
-        }
 
         cerrarModal();
       } else {
@@ -335,39 +305,6 @@ export default function Tablon() {
           </TouchableOpacity>
         )}
       </View>
-
-      {/* ─── SELECTOR DE TEMPORADA (solo presidente) ─────────────────────── */}
-      {isPresident && seasons.length > 1 && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.seasonScroll}
-        >
-          {seasons.map((s) => (
-            <TouchableOpacity
-              key={s}
-              style={[
-                styles.seasonChip,
-                {
-                  backgroundColor: selectedSeason === s ? c.boton : c.input,
-                  borderColor: selectedSeason === s ? c.boton : c.bordeInput,
-                },
-              ]}
-              onPress={() => setSelectedSeason(s)}
-            >
-              <Text
-                style={{
-                  color: selectedSeason === s ? "#fff" : c.texto,
-                  fontWeight: "600",
-                  fontSize: 13,
-                }}
-              >
-                {s}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      )}
 
       {/* ─── LISTA ───────────────────────────────────────────────────────── */}
       <ScrollView
