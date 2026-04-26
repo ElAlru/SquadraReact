@@ -48,15 +48,17 @@
   "registerLink": "Regístrate"
 },
 "forgotPassword": {
-  "title": "Recuperar contraseña",
-  "subtitle": "Introduce tu email y te enviaremos un enlace para restablecer tu contraseña",
-  "email": "Email",
-  "emailPlaceholder": "correo@ejemplo.com",
-  "button": "Enviar enlace",
-  "backToLogin": "Volver al inicio de sesión",
-  "successTitle": "¡Email enviado!",
-  "successMessage": "Revisa tu bandeja de entrada y sigue las instrucciones"
-},
+    "title": "Recuperar contraseña",
+    "description": "Introduce tu correo electrónico y te enviaremos un enlace para restablecer tu contraseña.",
+    "emailLabel": "Email",
+    "emailPlaceholder": "ejemplo@squadra.com",
+    "sendButton": "Enviar enlace",
+    "backToLogin": "Volver al inicio de sesión",
+    "successTitle": "Enlace enviado",
+    "successDescription": "Revisa tu bandeja de entrada o la carpeta de spam para restablecer tu contraseña.",
+    "invalidEmail": "Introduce un email válido (ej: correo@dominio.com).",
+    "sendError": "No se pudo enviar el enlace."
+  },
 "selector": {
   "title": "Tus clubes",
   "subtitle": "Selecciona un club para continuar",

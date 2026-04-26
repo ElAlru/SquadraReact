@@ -3,39 +3,34 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
-  Alert,
-  Image,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  useColorScheme,
   View,
 } from "react-native";
+import LogoSimbolo from "../../components/LogoSimbolo";
 import { apiFetch } from "../../lib/api";
 import { isValidEmail } from "../../lib/helper";
 import { useTheme } from "../../lib/useTheme";
-import { useAuthStore } from "../../lib/store";
-import LogoSimbolo from "../../components/LogoSimbolo";
 
 export default function RecuperarPassword() {
   const { t } = useTranslation();
-  const c = useTheme();
-  const themeMode = useAuthStore((s: any) => s.themeMode);
-  const colorScheme = useColorScheme();
-  const isDark = themeMode === "dark" || (themeMode === "auto" && colorScheme === "dark");
+  const c = useTheme(); // ¡Tu paleta unificada!
 
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   const handleRecover = async () => {
+    setErrorMessage(""); // Limpiamos errores previos
+
     if (!isValidEmail(email)) {
-      Alert.alert(
-        t("common.error"),
-        t("forgotPassword.invalidEmail") || "Introduce un email válido.",
-      );
+      setErrorMessage(t("forgotPassword.invalidEmail") || "Introduce un email válido (ej: correo@dominio.com).");
       return;
     }
 
@@ -53,27 +48,24 @@ export default function RecuperarPassword() {
         setSent(true);
       } else {
         const msg = await res.text();
-        Alert.alert(
-          t("common.error"),
-          msg || t("forgotPassword.sendError") || "No se pudo enviar el enlace.",
-        );
+        setErrorMessage(msg || t("forgotPassword.sendError") || "No se pudo enviar el enlace.");
       }
     } catch {
-      Alert.alert(
-        t("common.connectionError"),
-        t("common.serverError") || "No hemos podido conectar con el servidor.",
-      );
+      setErrorMessage(t("common.serverError") || "No hemos podido conectar con el servidor. Revisa tu conexión.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <View style={[styles.root, { backgroundColor: c.fondo }]}>
+    <KeyboardAvoidingView 
+      style={[styles.root, { backgroundColor: c.fondo }]}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
       <LogoSimbolo
         size={700}
-        color="#ffc06d"
-        style={styles.watermark}
+        color={c.colorMarca}
+        style={[styles.watermark, { opacity: c.marcaAguaOpacity }]}
       />
 
       <ScrollView
@@ -82,17 +74,15 @@ export default function RecuperarPassword() {
       >
         <View style={styles.formContainer}>
 
-          {/* Branding compacto */}
-          <View style={styles.brandBlock}>
-            <LogoSimbolo size={60} color="#ffc06d" style={{ alignSelf: "center" }} />
-            <Image
-              source={
-                isDark
-                  ? require("../../assets/images/titulo-squadra-dark.png")
-                  : require("../../assets/images/titulo-squadra.png")
-              }
-              style={styles.imgTitulo}
-            />
+          {/* Bloque de marca unificado (Texto en lugar de PNG) */}
+          <View style={styles.headerTextContainer}>
+            <LogoSimbolo size={60} color={c.colorMarca} style={styles.logo} />
+            <Text style={[styles.tituloTexto, { color: c.colorMarca }]}>
+              SQUADRA
+            </Text>
+            <Text style={[styles.subtituloTexto, { color: c.colorMarca }]}>
+              DONDE NACE EL FÚTBOL
+            </Text>
           </View>
 
           {!sent ? (
@@ -122,6 +112,15 @@ export default function RecuperarPassword() {
                 editable={!loading}
               />
 
+              {/* Banner de Error */}
+              {errorMessage !== "" && (
+                <View style={[styles.errorBanner, { backgroundColor: `${c.error}15`, borderColor: c.error }]}>
+                  <Text style={{ color: c.error, fontSize: 13, textAlign: 'center', fontWeight: '500' }}>
+                    ⚠️ {errorMessage}
+                  </Text>
+                </View>
+              )}
+
               <TouchableOpacity
                 style={[styles.button, { backgroundColor: loading ? c.bordeInput : c.boton }]}
                 onPress={handleRecover}
@@ -149,11 +148,11 @@ export default function RecuperarPassword() {
           ) : (
             <View style={styles.successContainer}>
               <Text style={{ fontSize: 52, marginBottom: 16 }}>✅</Text>
-              <Text style={[styles.title, { color: c.texto }]}>
-                {t("forgotPassword.successTitle")}
+              <Text style={[styles.title, { color: c.texto, textAlign: "center" }]}>
+                {t("forgotPassword.successTitle", "Enlace enviado")}
               </Text>
-              <Text style={[styles.subtitle, { color: c.subtexto }]}>
-                {t("forgotPassword.successDescription")}
+              <Text style={[styles.subtitle, { color: c.subtexto, textAlign: "center" }]}>
+                {t("forgotPassword.successDescription", "Revisa tu bandeja de entrada o la carpeta de spam para restablecer tu contraseña.")}
               </Text>
               <TouchableOpacity
                 style={[
@@ -171,7 +170,7 @@ export default function RecuperarPassword() {
 
         </View>
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -182,7 +181,6 @@ const styles = StyleSheet.create({
     top: "50%",
     left: "50%",
     transform: [{ translateX: -350 }, { translateY: -350 }],
-    opacity: 0.06,
   },
   outer: { flexGrow: 1, justifyContent: "center" },
   formContainer: {
@@ -192,16 +190,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 32,
   },
-  brandBlock: {
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 20,
+  headerTextContainer: {
+    alignItems: 'center',
+    marginBottom: 32,
   },
-  imgTitulo: {
-    width: "55%",
-    height: 36,
-    resizeMode: "contain",
-    alignSelf: "center",
+  logo: {
+    marginBottom: 8,
+  },
+  tituloTexto: {
+    fontFamily: 'SquadraStencil',
+    fontSize: 48,
+    textAlign: "center",
+    letterSpacing: 2,
+    lineHeight: 52,
+  },
+  subtituloTexto: {
+    fontFamily: 'SquadraStencil',
+    fontSize: 14,
+    textAlign: "center",
+    letterSpacing: 4,
+    marginTop: -5,
+    opacity: 0.9,
   },
   title: {
     fontSize: 26,
@@ -225,6 +234,12 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     fontSize: 15,
   },
+  errorBanner: {
+    padding: 12,
+    borderWidth: 1,
+    borderRadius: 10,
+    marginBottom: 16,
+  },
   button: {
     padding: 15,
     borderRadius: 10,
@@ -247,5 +262,6 @@ const styles = StyleSheet.create({
   },
   successContainer: {
     alignItems: "center",
+    marginTop: 16,
   },
 });

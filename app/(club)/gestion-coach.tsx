@@ -66,7 +66,8 @@ interface CalendarEvent {
 
 export default function GestionCoach() {
   const c = useTheme();
-  const { activeClubId: clubId, activeTeamId: teamId, activeSeasonName } = useAuthStore();
+  const { activeClubId: clubId, activeTeamId: storeTeamId, activeSeasonName, activeRole } = useAuthStore();
+  const isPresident = activeRole === "PRESIDENT";
   const seasonLabel = activeSeasonName || "24-25";
 
   const [activeTab, setActiveTab] = useState<Tab>("ASISTENCIA");
@@ -83,6 +84,9 @@ export default function GestionCoach() {
   const [finesPage, setFinesPage] = useState(0);
   const [finesHasMore, setFinesHasMore] = useState(true);
 
+  const [localTeamId, setLocalTeamId] = useState<number | null>(storeTeamId ?? null);
+  const [teams, setTeams] = useState<{ id: number; label: string }[]>([]);
+
   const [saving, setSaving] = useState(false);
 
   const [fineModal, setFineModal] = useState(false);
@@ -97,21 +101,22 @@ export default function GestionCoach() {
   // ── FETCH ──────────────────────────────────────────────────────────────────
 
   const fetchEvents = useCallback(async () => {
+    if (!localTeamId) return;
     setLoadingEvents(true);
     try {
       const now = new Date();
       const from = now.toISOString();
       const to = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
-      const res = await apiFetch(`/api/calendar?clubId=${clubId}&teamId=${teamId}&seasonLabel=${seasonLabel}&from=${from}&to=${to}`);
+      const res = await apiFetch(`/api/calendar?clubId=${clubId}&teamId=${localTeamId}&seasonLabel=${seasonLabel}&from=${from}&to=${to}`);
       const data: CalendarEvent[] = await res.json();
       setEvents(data);
-      if (!selectedEvent && data.length > 0) setSelectedEvent(data[0]);
+      setSelectedEvent(data.length > 0 ? data[0] : null);
     } catch {
       Alert.alert("Error", "No se pudieron cargar los eventos.");
     } finally {
       setLoadingEvents(false);
     }
-  }, [clubId, teamId, seasonLabel]);
+  }, [clubId, localTeamId, seasonLabel]);
 
   useEffect(() => { fetchEvents(); }, [fetchEvents]);
 
@@ -123,6 +128,29 @@ export default function GestionCoach() {
   }, [selectedEvent, activeTab]);
 
   useEffect(() => { if (activeTab === "MULTAS") fetchFines(0); }, [activeTab]);
+
+  // Carga la lista de equipos del club si el usuario es presidente
+  useEffect(() => {
+    if (!isPresident || !clubId) return;
+    apiFetch(`/api/club/equipos/${clubId}`)
+      .then(r => r.json())
+      .then((data: any[]) => {
+        const mapped = data
+          .filter((t: any) => t.isActive)
+          .map((t: any) => ({ id: t.id, label: `${t.category}${t.suffix ? " " + t.suffix : ""}` }));
+        setTeams(mapped);
+        if (!localTeamId && mapped.length > 0) setLocalTeamId(mapped[0].id);
+      })
+      .catch(() => {});
+  }, [isPresident, clubId]);
+
+  // Al cambiar de equipo, limpia los datos de la sesión anterior
+  useEffect(() => {
+    setSelectedEvent(null);
+    setAttendance([]);
+    setCallups([]);
+    setStats([]);
+  }, [localTeamId]);
 
   const fetchAttendance = async () => {
     if (!selectedEvent) return;
@@ -156,7 +184,7 @@ export default function GestionCoach() {
   const fetchFines = async (page: number) => {
     setFinesLoading(true);
     try {
-      const res = await apiFetch(`/api/coach/fines?clubId=${clubId}&teamId=${teamId}&seasonLabel=${seasonLabel}&page=${page}&size=20`);
+      const res = await apiFetch(`/api/coach/fines?clubId=${clubId}&teamId=${localTeamId}&seasonLabel=${seasonLabel}&page=${page}&size=20`);
       const data = await res.json();
       const newFines: Fine[] = data.content;
       setFines(page === 0 ? newFines : prev => [...prev, ...newFines]);
@@ -247,7 +275,7 @@ export default function GestionCoach() {
         method: "POST",
         body: JSON.stringify({
           playerId: fineTarget.id,
-          teamId,
+          teamId: localTeamId,
           reason: fineReason,
           amount: parseFloat(fineAmount),
         }),
@@ -448,6 +476,36 @@ export default function GestionCoach() {
       </View>
 
       <ScrollView>
+        {/* Selector de equipo — solo visible para el presidente */}
+        {isPresident && teams.length > 0 && (
+          <View style={s.teamPickerContainer}>
+            <Text style={[s.teamPickerLabel, { color: c.subtexto }]}>EQUIPO</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {teams.map(team => {
+                const active = localTeamId === team.id;
+                return (
+                  <TouchableOpacity
+                    key={team.id}
+                    style={[
+                      s.teamChip,
+                      {
+                        backgroundColor: active ? `${c.boton}20` : c.input,
+                        borderWidth: active ? 2 : 1,
+                        borderColor: active ? c.boton : c.bordeInput,
+                      },
+                    ]}
+                    onPress={() => setLocalTeamId(team.id)}
+                  >
+                    <Text style={[s.teamChipText, { color: active ? c.boton : c.texto }]}>
+                      {team.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
+
         {/* Selector de evento */}
         <ScrollView horizontal style={s.eventPicker} showsHorizontalScrollIndicator={false}>
           {loadingEvents ? (
@@ -581,6 +639,11 @@ const s = StyleSheet.create({
   header:         { paddingTop: 56, paddingBottom: 20, paddingHorizontal: 20 },
   headerTitle:    { fontSize: 22, fontWeight: "800" },
   headerSub:      { fontSize: 13, marginTop: 2 },
+
+  teamPickerContainer: { paddingHorizontal: 12, paddingTop: 12, paddingBottom: 4 },
+  teamPickerLabel:     { fontSize: 10, fontWeight: "700", letterSpacing: 1.5, marginBottom: 8 },
+  teamChip:            { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, marginRight: 8 },
+  teamChipText:        { fontSize: 13, fontWeight: "600" },
 
   eventPicker:    { padding: 12 },
   eventChip:      { alignItems: "center", marginRight: 10, padding: 10, borderRadius: 12 },

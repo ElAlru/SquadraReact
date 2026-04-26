@@ -19,6 +19,14 @@ export default function ScreenContainer({ children, isFluid = false }: Props) {
 }
 
 const styles = StyleSheet.create({
-  flex:         { flex: 1 },
-  webContainer: { width: '100%', flex: 1 },
+  flex: { 
+    flex: 1 
+  },
+  webContainer: { 
+    width: '100%', 
+    flex: 1,
+    // --- MEJORA AÑADIDA ---
+    maxWidth: 1024,      // Evita que la app se desparrame en monitores gigantes
+    alignSelf: 'center', // Lo centra perfectamente en la pantalla web
+  },
 });

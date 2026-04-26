@@ -1,29 +1,29 @@
 import { router, useFocusEffect } from "expo-router";
-import { useState, useCallback } from "react";
+import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
-  Image,
+  Alert,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   useColorScheme,
   View,
-  RefreshControl,
-  Alert,
 } from "react-native";
 
+import LogoSimbolo from "../../components/LogoSimbolo"; // Añadido para mantener el branding
+import ScreenContainer from "../../components/ScreenContainer";
 import { apiFetch } from "../../lib/api";
 import { useAuthStore } from "../../lib/store";
 import { useTheme } from "../../lib/useTheme";
-import ScreenContainer from "../../components/ScreenContainer";
 
 const ROL_LABEL: Record<string, string> = {
-  PRESIDENT: "👑 Presidente",
-  COACH: "🎽 Entrenador",
-  PLAYER: "⚽ Jugador",
-  RELATIVE: "👨‍👧 Familiar",
-  OTHER: "👤 Miembro",
+  PRESIDENT: "Presidente",
+  COACH: "Entrenador",
+  PLAYER: "Jugador",
+  RELATIVE: "Familiar",
+  OTHER: "Miembro",
 };
 
 export default function SelectorIndex() {
@@ -31,6 +31,8 @@ export default function SelectorIndex() {
   const { setActiveClub, setSeason } = useAuthStore();
   const themeMode = useAuthStore((s: any) => s.themeMode);
   const colorScheme = useColorScheme();
+  // El isDark se puede sacar también de `c.isDark` si lo añadiste a tu theme, 
+  // pero lo dejamos así para no romper tu lógica actual
   const isDark = themeMode === "dark" || (themeMode === "auto" && colorScheme === "dark");
 
   const [clubes, setClubes] = useState<any[]>([]);
@@ -71,7 +73,7 @@ export default function SelectorIndex() {
         const label = await res.text();
         setSeason(label, label); 
       }
-      // 3. Vamos a la pantalla de inicio (Ruta corregida)
+      // 3. Vamos a la pantalla de inicio
       router.replace("/inicio"); 
     } catch (e) {
       Alert.alert("Error", "No se pudo conectar con el club");
@@ -80,77 +82,90 @@ export default function SelectorIndex() {
 
   return (
     <ScreenContainer>
-    <ScrollView
-      contentContainerStyle={[styles.container, { backgroundColor: c.fondo }]}
-      refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadAllData(true)} tintColor={c.boton} />}
-    >
-      <Image
-        source={
-          isDark
-            ? require("../../assets/images/titulo-squadra-dark.png")
-            : require("../../assets/images/titulo-squadra.png")
-        }
-        style={styles.brandImg}
-      />
-      <Text style={[styles.title, { color: c.texto }]}>Tus clubes</Text>
-
-      {isLoading && !isRefreshing ? (
-        <ActivityIndicator color={c.boton} size="large" style={{ marginVertical: 32 }} />
-      ) : (
-        <View style={styles.content}>
-          {clubes.map((club, idx) => (
-            <TouchableOpacity
-              key={`${club.clubId}-${idx}`}
-              style={[styles.clubCard, { backgroundColor: c.input, borderColor: c.bordeInput }]}
-              onPress={() => handleSelectClub(club)}
-            >
-              <View style={[styles.clubAvatar, { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` }]}>
-                <Text style={[styles.clubAvatarText, { color: c.boton }]}>{club.clubName.charAt(0)}</Text>
-              </View>
-              <View style={styles.clubInfo}>
-                <Text style={[styles.clubName, { color: c.texto }]}>{club.clubName}</Text>
-                <Text style={[styles.clubRol, { color: c.subtexto }]}>
-                  {ROL_LABEL[club.role] || "Miembro"}
-                </Text>
-              </View>
-              <Text style={[styles.clubArrow, { color: c.boton }]}>›</Text>
-            </TouchableOpacity>
-          ))}
-
-          {requests.map((req) => (
-            <TouchableOpacity 
-              key={req.id} 
-              style={[styles.requestCard, { backgroundColor: c.input, borderColor: c.bordeInput }]}
-              onPress={() => router.push("/(selector)/esperando")}
-            >
-              <Text style={{ fontSize: 20 }}>⏳</Text>
-              <View style={styles.clubInfo}>
-                <Text style={[styles.clubName, { color: c.texto, fontSize: 15 }]}>{req.clubName}</Text>
-                <Text style={[styles.clubRol, { color: '#C9A84C' }]}>Pendiente de aprobación</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
-
-          <View style={styles.actions}>
-            <TouchableOpacity style={[styles.actionCard, { backgroundColor: c.boton }]} onPress={() => router.push("/(selector)/crear-club")}>
-              <Text style={styles.actionTitle}>🏆 Crear mi club</Text>
-              <Text style={styles.actionArrow}>›</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.actionCard, { backgroundColor: c.input, borderWidth: 1, borderColor: c.bordeInput }]} onPress={() => router.push("/(selector)/unirse")}>
-              <Text style={[styles.actionTitle, { color: c.texto }]}>🔗 Unirme a un club</Text>
-              <Text style={[styles.actionArrow, { color: c.subtexto }]}>›</Text>
-            </TouchableOpacity>
-          </View>
+      <ScrollView
+        contentContainerStyle={[styles.container, { backgroundColor: c.fondo }]}
+        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadAllData(true)} tintColor={c.boton} />}
+      >
+        
+        {/* --- NUEVO BLOQUE DE BRANDING (Sustituye a la imagen rota) --- */}
+        <View style={styles.headerTextContainer}>
+          <LogoSimbolo size={40} color={c.colorMarca} style={{ marginBottom: 8 }} />
+          <Text style={[styles.tituloTexto, { color: c.colorMarca }]}>
+            SQUADRA
+          </Text>
         </View>
-      )}
-    </ScrollView>
+
+        <Text style={[styles.title, { color: c.texto }]}>Tus clubes</Text>
+
+        {isLoading && !isRefreshing ? (
+          <ActivityIndicator color={c.boton} size="large" style={{ marginVertical: 32 }} />
+        ) : (
+          <View style={styles.content}>
+            {clubes.map((club, idx) => (
+              <TouchableOpacity
+                key={`${club.clubId}-${idx}`}
+                style={[styles.clubCard, { backgroundColor: c.input, borderColor: c.bordeInput }]}
+                onPress={() => handleSelectClub(club)}
+              >
+                <View style={[styles.clubAvatar, { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` }]}>
+                  <Text style={[styles.clubAvatarText, { color: c.boton }]}>{club.clubName.charAt(0)}</Text>
+                </View>
+                <View style={styles.clubInfo}>
+                  <Text style={[styles.clubName, { color: c.texto }]}>{club.clubName}</Text>
+                  <Text style={[styles.clubRol, { color: c.subtexto }]}>
+                    {ROL_LABEL[club.role] || "Miembro"}
+                  </Text>
+                </View>
+                <Text style={[styles.clubArrow, { color: c.boton }]}>›</Text>
+              </TouchableOpacity>
+            ))}
+
+            {requests.map((req) => (
+              <TouchableOpacity 
+                key={req.id} 
+                style={[styles.requestCard, { backgroundColor: c.input, borderColor: c.bordeInput }]}
+                onPress={() => router.push("/(selector)/esperando")}
+              >
+                <Text style={{ fontSize: 20 }}>⏳</Text>
+                <View style={styles.clubInfo}>
+                  <Text style={[styles.clubName, { color: c.texto, fontSize: 15 }]}>{req.clubName}</Text>
+                  <Text style={[styles.clubRol, { color: '#C9A84C' }]}>Pendiente de aprobación</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+
+            <View style={styles.actions}>
+              <TouchableOpacity style={[styles.actionCard, { backgroundColor: c.boton }]} onPress={() => router.push("/(selector)/crear-club")}>
+                <Text style={styles.actionTitle}>🏆 Crear mi club</Text>
+                <Text style={styles.actionArrow}>›</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.actionCard, { backgroundColor: c.input, borderWidth: 1, borderColor: c.bordeInput }]} onPress={() => router.push("/(selector)/unirse")}>
+                <Text style={[styles.actionTitle, { color: c.texto }]}>🔗 Unirme a un club</Text>
+                <Text style={[styles.actionArrow, { color: c.subtexto }]}>›</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+      </ScrollView>
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flexGrow: 1, padding: 24, paddingTop: 60 },
-  brandImg: { width: "45%", height: 32, resizeMode: "contain", alignSelf: "center", marginBottom: 30 },
+  
+  // --- NUEVOS ESTILOS PARA EL TÍTULO ---
+  headerTextContainer: {
+    alignItems: "center",
+    marginBottom: 30,
+  },
+  tituloTexto: {
+    fontFamily: "SquadraStencil",
+    fontSize: 32, // Un poco más pequeño que en el Login para que no ocupe toda la pantalla
+    textAlign: "center",
+    letterSpacing: 2,
+  },
+
   title: { fontSize: 28, fontWeight: "800", marginBottom: 30 },
   content: { gap: 16 },
   clubCard: { flexDirection: "row", alignItems: "center", borderRadius: 16, borderWidth: 1, padding: 16, gap: 16 },
