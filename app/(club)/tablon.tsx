@@ -79,6 +79,16 @@ export default function Tablon() {
   const [pinned, setPinned] = useState(false);
   const [destinoEquipo, setDestinoEquipo] = useState<number | null>(null); // null = club global
   const [creando, setCreando] = useState(false);
+  const [equiposClub, setEquiposClub] = useState<{ id: number; category: string; suffix: string }[]>([]);
+
+  // ── CARGAR EQUIPOS (solo presidente, para el selector del modal) ─────────
+  useEffect(() => {
+    if (!isPresident || !clubId) return;
+    apiFetch(`/api/club/equipos/${clubId}`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data: any[]) => setEquiposClub(data))
+      .catch(() => {});
+  }, [isPresident, clubId]);
 
   // ── CARGAR ANUNCIOS ───────────────────────────────────────────────────────
   const fetchAnuncios = useCallback(async () => {
@@ -517,30 +527,44 @@ export default function Tablon() {
                         🏛 Todo el club
                       </Text>
                     </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[
-                        styles.destinoBtn,
-                        {
-                          backgroundColor:
-                            destinoEquipo !== null ? c.boton : c.input,
-                          borderColor:
-                            destinoEquipo !== null ? c.boton : c.bordeInput,
-                        },
-                      ]}
-                      onPress={() => {
-                        setDestinoEquipo(activeTeamId || 1); // Fallback rápido si el presi no tiene equipo asignado
-                      }}
-                    >
-                      <Text
-                        style={{
-                          color: destinoEquipo !== null ? "#fff" : c.texto,
-                          fontWeight: "600",
-                        }}
-                      >
-                        👕 Equipo específico
-                      </Text>
-                    </TouchableOpacity>
                   </View>
+                  {/* Selector de equipo específico */}
+                  {equiposClub.length > 0 && (
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      style={{ marginTop: 8 }}
+                    >
+                      {equiposClub.map((eq) => {
+                        const sel = destinoEquipo === eq.id;
+                        return (
+                          <TouchableOpacity
+                            key={eq.id}
+                            style={{
+                              backgroundColor: sel ? c.boton : c.input,
+                              borderColor: sel ? c.boton : c.bordeInput,
+                              borderWidth: 1,
+                              borderRadius: 10, // Un borde más suave, tipo botón
+                              paddingHorizontal: 16,
+                              paddingVertical: 10,
+                              marginRight: 8,
+                              flexDirection: "row", // Fuerza alineación horizontal
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}
+                            onPress={() => setDestinoEquipo(eq.id)}
+                          >
+                            <Text 
+                              numberOfLines={1} // Obliga al texto a quedarse en 1 línea
+                              style={{ color: sel ? "#fff" : c.texto, fontWeight: "600" }}
+                            >
+                              {eq.category}{eq.suffix ? ` ${eq.suffix}` : ""}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                  )}
                 </View>
               )}
 
