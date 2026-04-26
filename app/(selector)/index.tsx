@@ -12,15 +12,17 @@ import {
   View,
 } from "react-native";
 
-import LogoSimbolo from "../../components/LogoSimbolo"; // Añadido para mantener el branding
+import LogoSimbolo from "../../components/LogoSimbolo";
 import ScreenContainer from "../../components/ScreenContainer";
 import { apiFetch } from "../../lib/api";
 import { useAuthStore } from "../../lib/store";
 import { useTheme } from "../../lib/useTheme";
 
+// 🟢 AQUÍ ESTÁ EL ARREGLO: Añadimos STAFF al diccionario
 const ROL_LABEL: Record<string, string> = {
   PRESIDENT: "Presidente",
-  COACH: "Entrenador",
+  STAFF: "Entrenador", // 👈 ¡Fichaje estrella!
+  COACH: "Entrenador", // Lo mantenemos por retrocompatibilidad
   PLAYER: "Jugador",
   RELATIVE: "Familiar",
   OTHER: "Miembro",
@@ -31,8 +33,7 @@ export default function SelectorIndex() {
   const { setActiveClub, setSeason } = useAuthStore();
   const themeMode = useAuthStore((s: any) => s.themeMode);
   const colorScheme = useColorScheme();
-  // El isDark se puede sacar también de `c.isDark` si lo añadiste a tu theme, 
-  // pero lo dejamos así para no romper tu lógica actual
+  
   const isDark = themeMode === "dark" || (themeMode === "auto" && colorScheme === "dark");
 
   const [clubes, setClubes] = useState<any[]>([]);
@@ -64,16 +65,13 @@ export default function SelectorIndex() {
 
   const handleSelectClub = async (m: any) => {
     try {
-      // 1. Seteamos el club activo
       setActiveClub(m.clubId, m.clubName, m.role, m.teamId, m.clubLogo);
 
-      // 2. Obtenemos la temporada actual del Java
       const res = await apiFetch(`/api/clubs/${m.clubId}/current-season`);
       if (res.ok) {
         const label = await res.text();
         setSeason(label, label); 
       }
-      // 3. Vamos a la pantalla de inicio
       router.replace("/inicio"); 
     } catch (e) {
       Alert.alert("Error", "No se pudo conectar con el club");
@@ -87,7 +85,6 @@ export default function SelectorIndex() {
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadAllData(true)} tintColor={c.boton} />}
       >
         
-        {/* --- NUEVO BLOQUE DE BRANDING (Sustituye a la imagen rota) --- */}
         <View style={styles.headerTextContainer}>
           <LogoSimbolo size={40} color={c.colorMarca} style={{ marginBottom: 8 }} />
           <Text style={[styles.tituloTexto, { color: c.colorMarca }]}>
@@ -112,9 +109,12 @@ export default function SelectorIndex() {
                 </View>
                 <View style={styles.clubInfo}>
                   <Text style={[styles.clubName, { color: c.texto }]}>{club.clubName}</Text>
+                  
+                  {/* 🟢 Aquí es donde se aplica la traducción mágica */}
                   <Text style={[styles.clubRol, { color: c.subtexto }]}>
                     {ROL_LABEL[club.role] || "Miembro"}
                   </Text>
+                  
                 </View>
                 <Text style={[styles.clubArrow, { color: c.boton }]}>›</Text>
               </TouchableOpacity>
@@ -153,19 +153,8 @@ export default function SelectorIndex() {
 
 const styles = StyleSheet.create({
   container: { flexGrow: 1, padding: 24, paddingTop: 60 },
-  
-  // --- NUEVOS ESTILOS PARA EL TÍTULO ---
-  headerTextContainer: {
-    alignItems: "center",
-    marginBottom: 30,
-  },
-  tituloTexto: {
-    fontFamily: "SquadraStencil",
-    fontSize: 32, // Un poco más pequeño que en el Login para que no ocupe toda la pantalla
-    textAlign: "center",
-    letterSpacing: 2,
-  },
-
+  headerTextContainer: { alignItems: "center", marginBottom: 30 },
+  tituloTexto: { fontFamily: "SquadraStencil", fontSize: 32, textAlign: "center", letterSpacing: 2 },
   title: { fontSize: 28, fontWeight: "800", marginBottom: 30 },
   content: { gap: 16 },
   clubCard: { flexDirection: "row", alignItems: "center", borderRadius: 16, borderWidth: 1, padding: 16, gap: 16 },
@@ -173,7 +162,7 @@ const styles = StyleSheet.create({
   clubAvatarText: { fontSize: 22, fontWeight: "bold" },
   clubInfo: { flex: 1 },
   clubName: { fontSize: 17, fontWeight: "700" },
-  clubRol: { fontSize: 13, marginTop: 2 },
+  clubRol: { fontSize: 13, marginTop: 2, textTransform: "capitalize" },
   clubArrow: { fontSize: 24, fontWeight: "300" },
   requestCard: { flexDirection: "row", alignItems: "center", borderRadius: 16, borderWidth: 1, padding: 14, gap: 14, borderStyle: 'dashed' },
   actions: { marginTop: 20, gap: 12 },

@@ -43,7 +43,9 @@ export default function MiClub() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
   const [teams, setTeams] = useState<any[]>([]);
-  const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
+  
+  // 🟢 MAGIA AQUÍ: Inicializamos directamente
+  const [selectedTeamId, setSelectedTeamId] = useState<number | null>(activeTeamId || null);
 
   // Modal estadísticas
   const [statsModal, setStatsModal] = useState(false);
@@ -64,12 +66,10 @@ export default function MiClub() {
         if (res.ok) {
           const json = await res.json();
           setTeams(json);
-          // Por defecto mostrar el equipo activo del usuario (si existe en la lista)
-          const defaultId = activeTeamId
-            ? (json.find((t: any) => t.id === activeTeamId)?.id ?? json[0]?.id)
-            : json[0]?.id;
-          if (defaultId) setSelectedTeamId(defaultId);
-          else setLoading(false);
+          // Fallback por si la id del Zustand no coincide (o es la primera vez)
+          if (!selectedTeamId && json.length > 0) {
+            setSelectedTeamId(json[0].id);
+          }
         } else {
           setLoading(false);
         }
@@ -79,7 +79,7 @@ export default function MiClub() {
       }
     }
     loadTeams();
-  }, [clubId, activeTeamId]);
+  }, [clubId]); // Quitamos dependencias extra para no resetear innecesariamente
 
   // ── CARGAR DETALLE DEL EQUIPO SELECCIONADO ────────────────────────────────
   useEffect(() => {
@@ -474,8 +474,7 @@ export default function MiClub() {
                   Temporada {seasonLabel}
                 </Text>
 
-                {/* Grid de estadísticas — SOLO MÉTRICAS POSITIVAS / DE PARTIDO */}
-                {/* PROHIBIDO: titularidades y suplencias */}
+                {/* Grid de estadísticas */}
                 <View style={styles.statsGrid}>
                   {[
                     { label: "⚽ Goles", value: playerStats.totalGoles },

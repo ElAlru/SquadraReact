@@ -28,9 +28,11 @@ export default function Horarios() {
   const [eventos, setEventos] = useState<any[]>([]);
   const [filtroTipo, setFiltroTipo] = useState<FiltroTipo>("TODOS");
 
-  // Selector de equipos
+  // 🟢 MAGIA AQUÍ: Inicializamos directamente con el equipo del Zustand
   const [teams, setTeams] = useState<any[]>([]);
-  const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null); // null = todos los equipos
+  const [selectedTeamId, setSelectedTeamId] = useState<number | null>(
+    activeRole === "PRESIDENT" ? null : (activeTeamId || null)
+  );
 
   // ── CARGAR LISTA DE EQUIPOS DEL CLUB ─────────────────────────────────────
   useEffect(() => {
@@ -39,14 +41,9 @@ export default function Horarios() {
       .then((res) => (res.ok ? res.json() : []))
       .then((data: any[]) => {
         setTeams(data);
-        // Default: si no es presidente, preseleccionar su equipo
-        if (activeRole !== "PRESIDENT" && activeTeamId) {
-          setSelectedTeamId(activeTeamId);
-        }
-        // Presidente por defecto ve todos
       })
       .catch(() => {});
-  }, [clubId, activeTeamId, activeRole]);
+  }, [clubId]);
 
   // ── CARGAR EVENTOS ────────────────────────────────────────────────────────
   const fetchEventos = useCallback(async () => {
