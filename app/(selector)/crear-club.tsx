@@ -1,6 +1,6 @@
 import { router } from 'expo-router'
 import { useState } from 'react'
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { apiFetch } from '../../lib/api'
 import { useAuthStore } from '../../lib/store'
 import { useTheme } from '../../lib/useTheme'
@@ -83,44 +83,58 @@ export default function CrearClub() {
 
   return (
     <ScreenContainer>
-    <ScrollView contentContainerStyle={[styles.container, { backgroundColor: c.fondo }]}>
-      <Text style={[styles.title, { color: c.texto, marginTop: 40 }]}>Nuevo club</Text>
-
-      <Text style={[styles.label, { color: c.subtexto }]}>Nombre del club *</Text>
-      <TextInput
-        style={[styles.input, { backgroundColor: c.input, color: c.texto, borderColor: c.bordeInput }]}
-        placeholder="Ej: UD Atlético Parque"
-        placeholderTextColor={c.subtexto}
-        value={nombre}
-        onChangeText={setNombre}
-        maxLength={100}
-      />
-
-      <Text style={[styles.label, { color: c.subtexto }]}>
-        URL del logo{' '}
-        <Text style={{ fontStyle: 'italic' }}>(opcional)</Text>
-      </Text>
-      <TextInput
-        style={[styles.input, { backgroundColor: c.input, color: c.texto, borderColor: c.bordeInput }]}
-        placeholder="https://ejemplo.com/logo.png"
-        placeholderTextColor={c.subtexto}
-        value={logoUrl}
-        onChangeText={setLogoUrl}
-        autoCapitalize="none"
-        keyboardType="url"
-      />
-
-      <TouchableOpacity
-        style={[styles.button, { backgroundColor: nombre.trim() ? c.boton : c.subtexto + '50', marginTop: 8 }]}
-        onPress={handleCrearClub}
-        disabled={isSubmitting || !nombre.trim()}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
       >
-        {isSubmitting
-          ? <ActivityIndicator color="white" />
-          : <Text style={styles.buttonText}>Crear club</Text>
-        }
-      </TouchableOpacity>
-    </ScrollView>
+        <ScrollView
+          contentContainerStyle={[styles.container, { backgroundColor: c.fondo }]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={[styles.title, { color: c.texto, marginTop: 40 }]}>Nuevo club</Text>
+
+          <Text style={[styles.label, { color: c.subtexto }]}>Nombre del club *</Text>
+          <TextInput
+            style={[styles.input, { backgroundColor: c.input, color: c.texto, borderColor: c.bordeInput }]}
+            placeholder="Ej: UD Atlético Parque"
+            placeholderTextColor={c.subtexto}
+            value={nombre}
+            onChangeText={setNombre}
+            maxLength={100}
+            returnKeyType="next"
+          />
+
+          <Text style={[styles.label, { color: c.subtexto }]}>
+            URL del logo{' '}
+            <Text style={{ fontStyle: 'italic' }}>(opcional)</Text>
+          </Text>
+          <TextInput
+            style={[styles.input, { backgroundColor: c.input, color: c.texto, borderColor: c.bordeInput }]}
+            placeholder="https://ejemplo.com/logo.png"
+            placeholderTextColor={c.subtexto}
+            value={logoUrl}
+            onChangeText={setLogoUrl}
+            autoCapitalize="none"
+            keyboardType="url"
+            returnKeyType="done"
+            onSubmitEditing={handleCrearClub}
+          />
+
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: nombre.trim() ? c.boton : c.subtexto + '50', marginTop: 8 }]}
+            onPress={handleCrearClub}
+            disabled={isSubmitting || !nombre.trim()}
+            activeOpacity={0.85}
+          >
+            {isSubmitting
+              ? <ActivityIndicator color="white" />
+              : <Text style={styles.buttonText}>Crear club</Text>
+            }
+          </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </ScreenContainer>
   )
 }

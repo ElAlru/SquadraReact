@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Alert, ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { Alert, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { router } from 'expo-router'
 import { useTheme } from '../../lib/useTheme'
 import ScreenContainer from '../../components/ScreenContainer'
@@ -84,70 +84,84 @@ export default function Unirse() {
 
   return (
     <ScreenContainer>
-    <ScrollView contentContainerStyle={[styles.container, { backgroundColor: c.fondo }]}>
-      <Text style={[styles.title, { color: c.texto, marginTop: 40 }]}>Unirme a un club</Text>
-      <Text style={[styles.label, { color: c.subtexto }]}>Código de invitación</Text>
-      <TextInput
-        style={[styles.codeInput, { backgroundColor: c.input, color: c.texto, borderColor: c.bordeInput }]}
-        placeholder="ABCDEF"
-        placeholderTextColor={c.subtexto}
-        autoCapitalize="characters"
-        maxLength={6}
-        value={codigo}
-        onChangeText={(text) => setCodigo(text.toUpperCase())}
-      />
-
-      <Text style={[styles.label, { color: c.subtexto }]}>¿Con qué rol quieres unirte?</Text>
-      <View style={styles.rolesGrid}>
-        {ROLES.map((rol) => {
-          const isSelected = rolSeleccionado === rol.value
-          return (
-            <TouchableOpacity
-              key={rol.value}
-              style={[
-                styles.rolCard,
-                {
-                  backgroundColor: isSelected ? c.boton : c.input,
-                  borderColor: isSelected ? c.boton : c.bordeInput,
-                }
-              ]}
-              onPress={() => setRolSeleccionado(rol.value)}
-            >
-              <Text style={[styles.rolText, { color: isSelected ? 'white' : c.texto }]}>
-                {rol.label}
-              </Text>
-            </TouchableOpacity>
-          )
-        })}
-      </View>
-
-      <Text style={[styles.label, { color: c.subtexto }]}>
-        Mensaje para el presidente{' '}
-        <Text style={{ color: c.subtexto, fontStyle: 'italic' }}>(opcional)</Text>
-      </Text>
-      <TextInput
-        style={[styles.messageInput, { backgroundColor: c.input, color: c.texto, borderColor: c.bordeInput }]}
-        placeholder="Ej: Soy el portero del equipo alevín..."
-        placeholderTextColor={c.subtexto}
-        multiline
-        maxLength={500}
-        value={mensaje}
-        onChangeText={setMensaje}
-        textAlignVertical="top"
-      />
-      <Text style={[styles.charCount, { color: c.subtexto }]}>{mensaje.length}/500</Text>
-
-      <TouchableOpacity
-        style={[styles.button, { backgroundColor: canSubmit ? c.boton : c.subtexto + '50', marginTop: 8 }]}
-        onPress={handleJoin}
-        disabled={!canSubmit}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
       >
-        {isLoading
-          ? <ActivityIndicator color="white" />
-          : <Text style={styles.buttonText}>Enviar solicitud</Text>
-        }
-      </TouchableOpacity>
-    </ScrollView>
+        <ScrollView
+          contentContainerStyle={[styles.container, { backgroundColor: c.fondo }]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={[styles.title, { color: c.texto, marginTop: 40 }]}>Unirme a un club</Text>
+          <Text style={[styles.label, { color: c.subtexto }]}>Código de invitación</Text>
+          <TextInput
+            style={[styles.codeInput, { backgroundColor: c.input, color: c.texto, borderColor: c.bordeInput }]}
+            placeholder="ABCDEF"
+            placeholderTextColor={c.subtexto}
+            autoCapitalize="characters"
+            maxLength={6}
+            value={codigo}
+            onChangeText={(text) => setCodigo(text.toUpperCase())}
+            returnKeyType="done"
+            autoCorrect={false}
+          />
+
+          <Text style={[styles.label, { color: c.subtexto }]}>¿Con qué rol quieres unirte?</Text>
+          <View style={styles.rolesGrid}>
+            {ROLES.map((rol) => {
+              const isSelected = rolSeleccionado === rol.value
+              return (
+                <TouchableOpacity
+                  key={rol.value}
+                  style={[
+                    styles.rolCard,
+                    {
+                      backgroundColor: isSelected ? c.boton : c.input,
+                      borderColor: isSelected ? c.boton : c.bordeInput,
+                    }
+                  ]}
+                  onPress={() => setRolSeleccionado(rol.value)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.rolText, { color: isSelected ? 'white' : c.texto }]}>
+                    {rol.label}
+                  </Text>
+                </TouchableOpacity>
+              )
+            })}
+          </View>
+
+          <Text style={[styles.label, { color: c.subtexto }]}>
+            Mensaje para el presidente{' '}
+            <Text style={{ color: c.subtexto, fontStyle: 'italic' }}>(opcional)</Text>
+          </Text>
+          <TextInput
+            style={[styles.messageInput, { backgroundColor: c.input, color: c.texto, borderColor: c.bordeInput }]}
+            placeholder="Ej: Soy el portero del equipo alevín..."
+            placeholderTextColor={c.subtexto}
+            multiline
+            maxLength={500}
+            value={mensaje}
+            onChangeText={setMensaje}
+            textAlignVertical="top"
+          />
+          <Text style={[styles.charCount, { color: c.subtexto }]}>{mensaje.length}/500</Text>
+
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: canSubmit ? c.boton : c.subtexto + '50', marginTop: 8 }]}
+            onPress={handleJoin}
+            disabled={!canSubmit}
+            activeOpacity={0.85}
+          >
+            {isLoading
+              ? <ActivityIndicator color="white" />
+              : <Text style={styles.buttonText}>Enviar solicitud</Text>
+            }
+          </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </ScreenContainer>
   )
 }

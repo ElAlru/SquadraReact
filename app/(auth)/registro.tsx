@@ -12,6 +12,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import LogoSimbolo from "../../components/LogoSimbolo";
@@ -41,6 +42,8 @@ export default function Register() {
   const { t } = useTranslation();
   const setAuth = useAuthStore((state) => state.setAuth);
   const c = useTheme();
+  const { height } = useWindowDimensions();
+  const isSmallScreen = height < 700;
 
   // Estados del formulario
   const [firstName, setFirstName] = useState("");
@@ -153,22 +156,27 @@ export default function Register() {
   const mismatch = confirmPassword !== "" && confirmPassword !== password;
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       style={[styles.root, { backgroundColor: c.fondo }]}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 24}
     >
-      <LogoSimbolo 
-        size={700} 
-        color={c.colorMarca} 
-        style={[styles.watermark, { opacity: c.marcaAguaOpacity }]} 
+      <LogoSimbolo
+        size={700}
+        color={c.colorMarca}
+        style={[styles.watermark, { opacity: c.marcaAguaOpacity }]}
       />
 
-      <ScrollView contentContainerStyle={styles.outer} keyboardShouldPersistTaps="handled">
-        <View style={styles.formContainer}>
+      <ScrollView
+        contentContainerStyle={styles.outer}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={[styles.formContainer, { paddingVertical: isSmallScreen ? 20 : 32 }]}>
 
-          <View style={styles.headerTextContainer}>
-            <LogoSimbolo size={60} color={c.colorMarca} style={styles.logo} />
-            <Text style={[styles.tituloTexto, { color: c.colorMarca }]}>SQUADRA</Text>
+          <View style={[styles.headerTextContainer, { marginBottom: isSmallScreen ? 16 : 28 }]}>
+            <LogoSimbolo size={isSmallScreen ? 48 : 60} color={c.colorMarca} style={styles.logo} />
+            <Text style={[styles.tituloTexto, { color: c.colorMarca, fontSize: isSmallScreen ? 36 : 44 }]}>SQUADRA</Text>
             <Text style={[styles.subtituloTexto, { color: c.colorMarca }]}>DONDE NACE EL FÚTBOL</Text>
           </View>
 
@@ -284,31 +292,30 @@ export default function Register() {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   watermark: { position: "absolute", top: "50%", left: "50%", transform: [{ translateX: -350 }, { translateY: -350 }] },
-  outer: { flexGrow: 1, justifyContent: "center" },
-  formContainer: { maxWidth: 420, width: "100%", alignSelf: "center", paddingHorizontal: 24, paddingVertical: 32 },
-  headerTextContainer: { alignItems: 'center', marginBottom: 32 },
-  logo: { marginBottom: 8 },
-  tituloTexto: { fontFamily: 'SquadraStencil', fontSize: 48, textAlign: "center", letterSpacing: 2 },
-  subtituloTexto: { fontFamily: 'SquadraStencil', fontSize: 14, textAlign: "center", letterSpacing: 4, marginTop: -5 },
-  photoContainer: { alignSelf: "center", marginBottom: 32 },
-  photo: { width: 100, height: 100, borderRadius: 50, borderWidth: 3 },
-  photoEmpty: { width: 100, height: 100, borderRadius: 50, borderWidth: 2, borderStyle: "dashed", alignItems: "center", justifyContent: "center" },
+  outer: { flexGrow: 1, justifyContent: "center", paddingBottom: 32 },
+  formContainer: { maxWidth: 440, width: "100%", alignSelf: "center", paddingHorizontal: 28 },
+  headerTextContainer: { alignItems: "center" },
+  logo: { marginBottom: 6 },
+  tituloTexto: { fontFamily: "SquadraStencil", textAlign: "center", letterSpacing: 2 },
+  subtituloTexto: { fontFamily: "SquadraStencil", fontSize: 13, textAlign: "center", letterSpacing: 4, marginTop: -4, opacity: 0.85 },
+  photoContainer: { alignSelf: "center", marginBottom: 24 },
+  photo: { width: 96, height: 96, borderRadius: 48, borderWidth: 3 },
+  photoEmpty: { width: 96, height: 96, borderRadius: 48, borderWidth: 2, borderStyle: "dashed", alignItems: "center", justifyContent: "center" },
   photoIcon: { fontSize: 24 },
   photoText: { fontSize: 11, fontWeight: "500" },
   photoEditBadge: { position: "absolute", bottom: 0, right: 0, width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center", borderWidth: 2 },
   photoEditIcon: { fontSize: 12 },
-  label: { fontSize: 13, fontWeight: "500", marginBottom: 6 },
-  input: { borderWidth: 1, borderRadius: 10, padding: 13, marginBottom: 16, fontSize: 15 },
-  phoneRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
-  countryBadge: { paddingHorizontal: 12, borderRadius: 10, borderWidth: 1, justifyContent: 'center', alignItems: 'center' },
-  errorBanner: { padding: 12, borderWidth: 1, borderRadius: 10, marginBottom: 16 },
-  button: { padding: 15, borderRadius: 10, alignItems: "center", marginTop: 8, marginBottom: 16 },
+  label: { fontSize: 13, fontWeight: "600", marginBottom: 7, letterSpacing: 0.2 },
+  input: { borderWidth: 1.5, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 14, marginBottom: 16, fontSize: 15 },
+  phoneRow: { flexDirection: "row", gap: 8, marginBottom: 16 },
+  countryBadge: { paddingHorizontal: 12, borderRadius: 12, borderWidth: 1.5, justifyContent: "center", alignItems: "center" },
+  errorBanner: { padding: 13, borderWidth: 1, borderRadius: 12, marginBottom: 16 },
+  button: { paddingVertical: 16, borderRadius: 12, alignItems: "center", marginTop: 8, marginBottom: 20 },
   buttonText: { fontWeight: "bold", fontSize: 16 },
-  linkContainer: { flexDirection: "row", justifyContent: "center" },
+  linkContainer: { flexDirection: "row", justifyContent: "center", paddingVertical: 4 },
   link: { fontWeight: "bold" },
-  // Estilos recuperados para los botones de DNI
   radioGroup: { flexDirection: "row", gap: 8, marginBottom: 16 },
-  radioButton: { flex: 1, flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1.5, borderRadius: 10, padding: 10 },
+  radioButton: { flex: 1, flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1.5, borderRadius: 12, padding: 11 },
   radioCircle: { width: 16, height: 16, borderRadius: 8, borderWidth: 2, alignItems: "center", justifyContent: "center" },
   radioCircleFill: { width: 8, height: 8, borderRadius: 4 },
   radioText: { fontSize: 13, fontWeight: "600" },

@@ -1,8 +1,35 @@
 import { router } from "expo-router";
 import { useTranslation } from "react-i18next";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { useTheme } from "../../lib/useTheme";
+import {
+  Dimensions,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import LogoSimbolo from "../../components/LogoSimbolo";
+import { useTheme } from "../../lib/useTheme";
+
+const { width } = Dimensions.get("window");
+
+/* ─── Mini componente para cada feature ─── */
+function FeaturePill({
+  icon,
+  label,
+  color,
+}: {
+  icon: string;
+  label: string;
+  color: string;
+}) {
+  return (
+    <View style={[styles.pill, { borderColor: color + "30" }]}>
+      <Text style={styles.pillIcon}>{icon}</Text>
+      <Text style={[styles.pillLabel, { color }]}>{label}</Text>
+    </View>
+  );
+}
 
 export default function WelcomeScreen() {
   const { t } = useTranslation();
@@ -10,18 +37,25 @@ export default function WelcomeScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: c.fondo }]}>
-      {/* Marca de agua gigante y descentrada para darle un toque dinámico */}
-      <LogoSimbolo
-        size={800}
-        color={c.colorMarca}
-        style={[styles.watermark, { opacity: c.marcaAguaOpacity }]}
-      />
+      {/* ── Marca de agua gigante con rotación sutil ── */}
+      <View style={styles.watermarkWrap}>
+        <LogoSimbolo
+          size={700}
+          color={c.colorMarca}
+          style={[styles.watermark, { opacity: c.marcaAguaOpacity ?? 0.06 }]}
+        />
+      </View>
 
-      <View style={styles.container}>
-        
-        {/* SECCIÓN 1: Branding (Logo y Títulos) */}
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ═══════════════════  HERO  ═══════════════════ */}
         <View style={styles.heroSection}>
-          <LogoSimbolo size={100} color={c.colorMarca} style={styles.logo} />
+          <View style={[styles.logoRing, { borderColor: c.colorMarca + "25" }]}>
+            <LogoSimbolo size={72} color={c.colorMarca} style={styles.logo} />
+          </View>
+
           <Text style={[styles.tituloTexto, { color: c.colorMarca }]}>
             SQUADRA
           </Text>
@@ -30,23 +64,68 @@ export default function WelcomeScreen() {
           </Text>
         </View>
 
-        {/* SECCIÓN 2: Mensaje de bienvenida / Copywriting */}
+        {/* ═══════════════════  COPY  ═══════════════════ */}
         <View style={styles.infoSection}>
           <Text style={[styles.welcomeTitle, { color: c.texto }]}>
-            {t("welcome.title", "La gestión de tu club,\nen la palma de tu mano")}
+            {t(
+              "welcome.title",
+              "La gestión de tu club,\nen la palma de tu mano",
+            )}
           </Text>
           <Text style={[styles.welcomeDescription, { color: c.subtexto }]}>
             {t(
               "welcome.description",
-              "Organiza entrenamientos, gestiona equipos, comunícate con jugadores y lleva tu club de fútbol base al siguiente nivel con una plataforma diseñada para ti."
+              "Organiza entrenamientos, gestiona equipos, comunícate con jugadores y lleva tu club de fútbol base al siguiente nivel con una plataforma diseñada para ti.",
             )}
           </Text>
         </View>
 
-        {/* SECCIÓN 3: Botones de Acción */}
+        {/* ═══════════════════  FEATURES  ═══════════════════ */}
+        <View style={styles.featuresSection}>
+          <View style={styles.featuresGrid}>
+            <FeaturePill
+              icon="👥"
+              label={t("feat.teams", "Equipos")}
+              color={c.texto}
+            />
+            <FeaturePill
+              icon="📋"
+              label={t("feat.lineups", "Alineaciones")}
+              color={c.texto}
+            />
+            <FeaturePill
+              icon="💶"
+              label={t("feat.fees", "Cuotas")}
+              color={c.texto}
+            />
+            <FeaturePill
+              icon="📅"
+              label={t("feat.training", "Entrenos")}
+              color={c.texto}
+            />
+            <FeaturePill
+              icon="⚽"
+              label={t("feat.matches", "Partidos")}
+              color={c.texto}
+            />
+            <FeaturePill
+              icon="📌"
+              label={t("feat.fields", "Campos")}
+              color={c.texto}
+            />
+            <FeaturePill
+              icon="📢"
+              label={t("feat.board", "Anuncios")}
+              color={c.texto}
+            />
+          </View>
+        </View>
+
+        {/* ═══════════════════  CTA  ═══════════════════ */}
         <View style={styles.actionSection}>
           <TouchableOpacity
             style={[styles.primaryButton, { backgroundColor: c.boton }]}
+            activeOpacity={0.85}
             onPress={() => router.push("/login")}
           >
             <Text style={[styles.primaryButtonText, { color: c.botonTexto }]}>
@@ -56,6 +135,7 @@ export default function WelcomeScreen() {
 
           <TouchableOpacity
             style={[styles.secondaryButton, { borderColor: c.boton }]}
+            activeOpacity={0.7}
             onPress={() => router.push("/registro")}
           >
             <Text style={[styles.secondaryButtonText, { color: c.boton }]}>
@@ -64,7 +144,17 @@ export default function WelcomeScreen() {
           </TouchableOpacity>
         </View>
 
-      </View>
+        {/* ═══════════════════  FOOTER  ═══════════════════ */}
+        <Text style={[styles.footer, { color: c.subtexto }]}>
+          {t("welcome.footer", "¿Tu club ya usa Squadra?")}{" "}
+          <Text
+            style={[styles.footerLink, { color: c.boton }]}
+            onPress={() => router.push("/login")}
+          >
+            {t("welcome.footerLink", "Únete ahora")}
+          </Text>
+        </Text>
+      </ScrollView>
     </View>
   );
 }
@@ -72,88 +162,151 @@ export default function WelcomeScreen() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    justifyContent: "center",
+  },
+  watermarkWrap: {
+    position: "absolute",
+    top: -80,
+    right: -120,
+    transform: [{ rotate: "12deg" }],
   },
   watermark: {
-    position: "absolute",
-    top: "-10%",
-    right: "-30%",
+    /* la opacidad se controla desde tema */
   },
-  container: {
-    flex: 1,
-    maxWidth: 420,
-    width: "100%",
-    alignSelf: "center",
-    paddingHorizontal: 32,
-    justifyContent: "space-evenly", // Reparte el espacio verticalmente
+  scrollContent: {
+    paddingHorizontal: 28,
+    paddingTop: 60,
+    paddingBottom: 40,
+    alignItems: "center",
+    gap: 28,
   },
+
+  /* ── Hero ── */
   heroSection: {
     alignItems: "center",
-    marginTop: 40,
+    marginTop: 20,
+  },
+  logoRing: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    borderWidth: 1.5,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 20,
   },
   logo: {
-    marginBottom: 16,
+    /* centrado dentro del anillo */
   },
   tituloTexto: {
     fontFamily: "SquadraStencil",
-    fontSize: 56,
+    fontSize: 48,
     textAlign: "center",
-    letterSpacing: 2,
-    lineHeight: 60,
+    letterSpacing: 3,
+    lineHeight: 52,
   },
   subtituloTexto: {
     fontFamily: "SquadraStencil",
-    fontSize: 16,
+    fontSize: 14,
     textAlign: "center",
-    letterSpacing: 4,
-    marginTop: -5,
+    letterSpacing: 6,
+    marginTop: 6,
+    opacity: 0.9,
   },
+
+  /* ── Copy ── */
   infoSection: {
     alignItems: "center",
-    marginVertical: 20,
+    maxWidth: 340,
   },
   welcomeTitle: {
-    fontSize: 24,
-    fontWeight: "bold",
+    fontSize: 26,
+    fontWeight: "800",
     textAlign: "center",
-    marginBottom: 16,
-    lineHeight: 32,
+    marginBottom: 14,
+    lineHeight: 34,
+    letterSpacing: -0.3,
   },
   welcomeDescription: {
     fontSize: 15,
     textAlign: "center",
     lineHeight: 24,
+    opacity: 0.85,
   },
+
+  /* ── Features ── */
+  featuresSection: {
+    width: "100%",
+    maxWidth: 380,
+    marginTop: 8,
+  },
+  featuresGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    gap: 10,
+  },
+  pill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    borderWidth: 1,
+    backgroundColor: "transparent",
+  },
+  pillIcon: {
+    fontSize: 16,
+  },
+  pillLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    letterSpacing: 0.2,
+  },
+
+  /* ── CTAs ── */
   actionSection: {
     width: "100%",
-    gap: 16,
-    marginBottom: 40,
+    maxWidth: 340,
+    gap: 14,
+    marginTop: 12,
   },
   primaryButton: {
     paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: "center",
-    elevation: 2, // Sombra ligera en Android
-    shadowColor: "#000", // Sombra en iOS
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    transform: [{ scale: 1 }],
   },
   primaryButtonText: {
-    fontWeight: "bold",
+    fontWeight: "800",
     fontSize: 16,
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
   },
   secondaryButton: {
     paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: "center",
     borderWidth: 2,
     backgroundColor: "transparent",
   },
   secondaryButtonText: {
-    fontWeight: "bold",
+    fontWeight: "700",
     fontSize: 16,
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
+  },
+
+  /* ── Footer ── */
+  footer: {
+    fontSize: 13,
+    textAlign: "center",
+    marginTop: 8,
+  },
+  footerLink: {
+    fontWeight: "700",
   },
 });

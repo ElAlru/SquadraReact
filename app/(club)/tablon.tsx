@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   LayoutAnimation,
   Modal,
   Platform,
@@ -481,6 +482,10 @@ export default function Tablon() {
         animationType="slide"
         onRequestClose={cerrarModal}
       >
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
         <Pressable style={styles.overlay} onPress={cerrarModal}>
           <Pressable
             style={[
@@ -493,12 +498,13 @@ export default function Tablon() {
               <Text style={[styles.modalTitulo, { color: c.texto }]}>
                 📢 Nuevo Anuncio
               </Text>
-              <TouchableOpacity onPress={cerrarModal}>
+              <TouchableOpacity onPress={cerrarModal} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                 <Text style={{ color: c.subtexto, fontSize: 20 }}>✕</Text>
               </TouchableOpacity>
             </View>
 
-            <View style={{ gap: 14 }}>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <View style={{ gap: 14, paddingBottom: 8 }}>
               {/* Destino (solo presidente) */}
               {isPresident && (
                 <View>
@@ -647,14 +653,17 @@ export default function Tablon() {
                 ]}
                 onPress={handleCrear}
                 disabled={creando}
+                activeOpacity={0.85}
               >
                 <Text style={styles.btnGuardarText}>
                   {creando ? "Publicando..." : "Publicar Anuncio"}
                 </Text>
               </TouchableOpacity>
             </View>
+            </ScrollView>
           </Pressable>
         </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
     </ScreenContainer>
@@ -753,8 +762,10 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 25,
     borderTopRightRadius: 25,
     padding: 25,
+    paddingBottom: 32,
     borderWidth: 1,
     borderBottomWidth: 0,
+    maxHeight: "90%",
   },
   modalHeader: {
     flexDirection: "row",

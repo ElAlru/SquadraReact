@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
   View, Text, TouchableOpacity, ScrollView, Modal, TextInput,
-  StyleSheet, Alert, ActivityIndicator, Switch
+  StyleSheet, Alert, ActivityIndicator, Switch, KeyboardAvoidingView, Platform
 } from "react-native";
 import { apiFetch } from "../../lib/api";
 import { useAuthStore } from "../../lib/store";
@@ -678,6 +678,7 @@ export default function GestionCoach() {
 
       {/* ── Modal cerrar partido ── */}
       <Modal visible={closeMatchModal} transparent animationType="slide">
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <View style={s.modalOverlay}>
           <View style={[s.modalBox, { backgroundColor: c.fondo, borderColor: c.bordeInput }]}>
             <Text style={[s.modalTitle, { color: c.texto }]}>Cerrar partido</Text>
@@ -687,6 +688,7 @@ export default function GestionCoach() {
               placeholderTextColor={c.subtexto}
               onChangeText={setGoalsFor}
               keyboardType="numeric"
+              returnKeyType="next"
             />
             <TextInput
               style={[s.scoreInput, { borderColor: c.bordeInput, backgroundColor: c.input, color: c.texto }]}
@@ -694,6 +696,7 @@ export default function GestionCoach() {
               placeholderTextColor={c.subtexto}
               onChangeText={setGoalsAgainst}
               keyboardType="numeric"
+              returnKeyType="done"
             />
             <TouchableOpacity style={[s.btnDanger, { backgroundColor: COLOR_PELIGRO }]} onPress={handleCloseMatch}>
               <Text style={s.btnDangerText}>Cerrar partido</Text>
@@ -703,10 +706,12 @@ export default function GestionCoach() {
             </TouchableOpacity>
           </View>
         </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ── Modal nueva multa ── */}
       <Modal visible={fineModal} transparent animationType="slide" onRequestClose={() => setFineModal(false)}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <View style={s.modalOverlay}>
           <View style={[s.modalBox, { backgroundColor: c.fondo, borderColor: c.bordeInput }]}>
             <Text style={[s.modalTitle, { color: c.texto }]}>Nueva multa</Text>
@@ -766,6 +771,7 @@ export default function GestionCoach() {
             </TouchableOpacity>
           </View>
         </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
     </ScreenContainer>

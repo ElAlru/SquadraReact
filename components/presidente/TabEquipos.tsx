@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { View, Text, TouchableOpacity, ScrollView, Modal, TextInput, StyleSheet, Alert } from "react-native";
+import { View, Text, TouchableOpacity, ScrollView, Modal, TextInput, StyleSheet, Alert, KeyboardAvoidingView, Platform } from "react-native";
 import { apiFetch } from "../../lib/api";
 import { useAuthStore } from "../../lib/store";
 import { useTheme } from "../../lib/useTheme";
@@ -91,6 +91,7 @@ export default function TabEquipos() {
       ))}
 
       <Modal visible={createTeamModal} transparent animationType="slide">
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <View style={styles.modalOverlay}>
           <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: "flex-end" }} keyboardShouldPersistTaps="handled">
             <View style={[styles.modalBox, { backgroundColor: c.fondo }]}>
@@ -128,6 +129,7 @@ export default function TabEquipos() {
             </View>
           </ScrollView>
         </View>
+        </KeyboardAvoidingView>
       </Modal>
     </ScrollView>
   );
