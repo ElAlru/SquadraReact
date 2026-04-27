@@ -785,20 +785,20 @@ const s = StyleSheet.create({
   headerTitle:    { fontSize: 22, fontWeight: "800" },
   headerSub:      { fontSize: 13, marginTop: 2 },
 
-  teamPickerContainer: { paddingHorizontal: 12, paddingTop: 12, paddingBottom: 4 },
+  teamPickerContainer: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 4 },
   teamPickerLabel:     { fontSize: 10, fontWeight: "700", letterSpacing: 1.5, marginBottom: 8 },
   teamChip:            { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, marginRight: 8 },
   teamChipText:        { fontSize: 13, fontWeight: "600" },
 
-  eventPicker:    { padding: 12 },
+  eventPicker:    { paddingHorizontal: 20, paddingVertical: 12 },
   eventChip:      { alignItems: "center", marginRight: 10, padding: 10, borderRadius: 12 },
   eventChipText:  { fontSize: 10, textAlign: "center", marginTop: 2 },
 
-  tabBar:         { flexDirection: "row", paddingHorizontal: 16, borderBottomWidth: 1 },
+  tabBar:         { flexDirection: "row", paddingHorizontal: 20, borderBottomWidth: 1 },
   tabItem:        { flex: 1, paddingVertical: 12, alignItems: "center", borderBottomWidth: 2, borderBottomColor: "transparent" },
   tabText:        { fontSize: 11, fontWeight: "600" },
 
-  tabContent:     { padding: 16 },
+  tabContent:     { padding: 20 },
   hintText:       { textAlign: "center", marginTop: 20 },
 
   playerRow:      { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 12, marginBottom: 8, borderRadius: 10 },

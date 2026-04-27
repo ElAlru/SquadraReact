@@ -30,7 +30,7 @@ export default function GestionPresidente() {
       </View>
 
       {/* Selector de pestañas */}
-      <View style={{ flexDirection: "row", paddingHorizontal: 16, marginBottom: 15 }}>
+      <View style={{ flexDirection: "row", paddingHorizontal: 24, marginBottom: 15 }}>
         {(["SOLICITUDES", "CUOTAS", "EQUIPOS"] as Tab[]).map((tab) => (
           <TouchableOpacity
             key={tab}

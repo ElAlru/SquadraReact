@@ -21,6 +21,7 @@ interface CalendarEvent {
   startTime: string;
   endTime?: string;
   title: string;
+  teamId: number;
   teamName: string;
   location?: string;
 }
@@ -69,19 +70,30 @@ export default function Calendario() {
   } = useAuthStore();
 
   const isPresident = role === "PRESIDENT";
-  const canCreate = role === "COACH" || isPresident;
+  const isCoach = role === "COACH";
+  const isRelative = role === "RELATIVE";
+  const canCreate = isCoach || isPresident;
+
+  // Puede borrar si es presidente (cualquier evento) o coach (solo su equipo — se valida también en back)
+  const canDeleteEvent = (event: CalendarEvent): boolean => {
+    if (isPresident) return true;
+    if (isCoach && event.teamId === myTeamId) return true;
+    return false;
+  };
 
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [clubFields, setClubFields] = useState<Field[]>([]);
 
+  // RELATIVE: filtra por el equipo de su hijo. Resto (PRESIDENT, COACH, PLAYER): ve todo el club.
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(
-    isPresident ? null : (myTeamId ?? null),
+    isRelative ? (myTeamId ?? null) : null,
   );
   const [loading, setLoading] = useState(false);
 
-  // 🟢 ESTADO PARA BLOQUEAR EL BOTÓN MULTI-CLIC
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Clave del evento que se está borrando actualmente, formato "TRAINING-42" | "MATCH-7"
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const [createModal, setCreateModal] = useState(false);
   const [createType, setCreateType] = useState<"TRAINING" | "MATCH">(
@@ -257,6 +269,45 @@ export default function Calendario() {
     } finally {
       setIsSubmitting(false); // 🟢 DESBLOQUEAMOS EL BOTÓN
     }
+  };
+
+  // ─── BORRAR EVENTO ────────────────────────────────────────────────────────
+  const handleDeleteEvent = (
+    eventId: number,
+    eventType: "TRAINING" | "MATCH",
+  ) => {
+    const eventKey = `${eventType}-${eventId}`;
+    Alert.alert(
+      "Eliminar Evento",
+      "¿Estás seguro de que quieres borrar este evento? Esta acción no se puede deshacer.",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Eliminar",
+          style: "destructive",
+          onPress: async () => {
+            setDeletingId(eventKey);
+            try {
+              await apiFetch(
+                `/api/calendar/${eventId}?clubId=${clubId}&type=${eventType}`,
+                {
+                  method: "DELETE",
+                },
+              );
+              fetchEvents();
+              Alert.alert("Éxito", "Evento eliminado.");
+            } catch (error) {
+              Alert.alert(
+                "Error",
+                "No se pudo eliminar el evento. Verifica permisos.",
+              );
+            } finally {
+              setDeletingId(null);
+            }
+          },
+        },
+      ],
+    );
   };
 
   // ─── GENERAR CUADRÍCULA ──────────────────────────────────────────────────
@@ -462,45 +513,102 @@ export default function Calendario() {
             Lista de Eventos
           </Text>
 
-          {events.map((item) => (
+          {events.length === 0 && !loading && (
             <View
-              key={`${item.type}-${item.id}`}
               style={[
-                styles.card,
-                {
-                  backgroundColor: c.input,
-                  borderColor: c.bordeInput,
-                  borderLeftWidth: 4,
-                  borderLeftColor: item.type === "MATCH" ? c.boton : "#3b82f6",
-                },
+                styles.emptyCard,
+                { backgroundColor: c.input, borderColor: c.bordeInput },
               ]}
             >
-              <Text style={[styles.eventoTitulo, { color: c.texto }]}>
-                {item.type === "MATCH" ? "⚽" : "🏃"} {item.title}
+              <Text style={{ fontSize: 32, marginBottom: 8 }}>📭</Text>
+              <Text
+                style={[
+                  styles.metaText,
+                  { color: c.subtexto, textAlign: "center" },
+                ]}
+              >
+                No hay eventos este mes.
               </Text>
-              <Text style={[styles.metaText, { color: c.subtexto }]}>
-                📅 {new Date(item.startTime).toLocaleDateString("es-ES")} · 🕒{" "}
-                {new Date(item.startTime).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </Text>
-              {item.location && (
-                <Text
-                  style={[styles.metaText, { color: c.subtexto, marginTop: 2 }]}
-                >
-                  📍 {item.location}
-                </Text>
-              )}
-              {item.teamName && (
-                <Text
-                  style={[styles.metaText, { color: c.subtexto, marginTop: 2 }]}
-                >
-                  👥 {item.teamName}
-                </Text>
-              )}
             </View>
-          ))}
+          )}
+
+          {events.map((item) => {
+            const eventKey = `${item.type}-${item.id}`;
+            const isDeleting = deletingId === eventKey;
+            const showDelete = canDeleteEvent(item);
+
+            return (
+              <View
+                key={eventKey}
+                style={[
+                  styles.card,
+                  {
+                    backgroundColor: c.input,
+                    borderColor: c.bordeInput,
+                    borderLeftWidth: 4,
+                    borderLeftColor:
+                      item.type === "MATCH" ? c.boton : "#3b82f6",
+                  },
+                ]}
+              >
+                <View style={styles.cardRow}>
+                  {/* Contenido principal */}
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.eventoTitulo, { color: c.texto }]}>
+                      {item.type === "MATCH" ? "⚽" : "🏃"} {item.title}
+                    </Text>
+                    <Text style={[styles.metaText, { color: c.subtexto }]}>
+                      📅 {new Date(item.startTime).toLocaleDateString("es-ES")}{" "}
+                      · 🕒{" "}
+                      {new Date(item.startTime).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </Text>
+                    {item.location && (
+                      <Text
+                        style={[
+                          styles.metaText,
+                          { color: c.subtexto, marginTop: 2 },
+                        ]}
+                      >
+                        📍 {item.location}
+                      </Text>
+                    )}
+                    {item.teamName && (
+                      <Text
+                        style={[
+                          styles.metaText,
+                          { color: c.subtexto, marginTop: 2 },
+                        ]}
+                      >
+                        👥 {item.teamName}
+                      </Text>
+                    )}
+                  </View>
+
+                  {/* Botón papelera (solo si tiene permiso) */}
+                  {showDelete &&
+                    (isDeleting ? (
+                      <ActivityIndicator
+                        size="small"
+                        color="#ef4444"
+                        style={{ padding: 10 }}
+                      />
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.deleteBtn}
+                        onPress={() => handleDeleteEvent(item.id, item.type)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={{ fontSize: 17 }}>🗑️</Text>
+                      </TouchableOpacity>
+                    ))}
+                </View>
+              </View>
+            );
+          })}
         </ScrollView>
 
         {/* BOTÓN FLOTANTE */}
@@ -1051,7 +1159,7 @@ export default function Calendario() {
 const styles = StyleSheet.create({
   wrapper: { flex: 1 },
   container: { paddingHorizontal: 24, paddingBottom: 100 },
-  headerRow: { padding: 24, paddingTop: 60, paddingBottom: 10 },
+  headerRow: { paddingHorizontal: 24, paddingTop: 60, paddingBottom: 10 },
   headerTitle: { fontSize: 24, fontWeight: "bold" },
   headerSub: { fontSize: 14, fontWeight: "500", marginBottom: 5 },
   chip: {
@@ -1071,7 +1179,7 @@ const styles = StyleSheet.create({
   navBtnText: { fontSize: 16, fontWeight: "bold" },
   monthText: { fontSize: 18, fontWeight: "bold" },
   calendarWrapper: {
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
     padding: 10,
     paddingBottom: 15,
@@ -1100,9 +1208,41 @@ const styles = StyleSheet.create({
   dotsContainer: { flexDirection: "row", gap: 3, marginTop: 4 },
   dot: { width: 6, height: 6, borderRadius: 3 },
   sectionTitle: { fontSize: 18, fontWeight: "bold" },
-  card: { padding: 16, borderRadius: 12, borderWidth: 1, marginBottom: 10 },
-  eventoTitulo: { fontSize: 16, fontWeight: "bold", marginBottom: 6 },
+  // Tarjeta de evento
+  card: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  cardRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  eventoTitulo: { fontSize: 15, fontWeight: "bold", marginBottom: 5 },
   metaText: { fontSize: 13, fontWeight: "500" },
+  deleteBtn: {
+    padding: 8,
+    borderRadius: 10,
+    backgroundColor: "#ef444418",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyCard: {
+    padding: 30,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    alignItems: "center",
+    marginTop: 10,
+  },
   fab: {
     position: "absolute",
     bottom: 25,
@@ -1113,11 +1253,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     elevation: 5,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
   },
   fabText: { fontSize: 30, color: "#fff", fontWeight: "bold" },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: "rgba(0,0,0,0.55)",
     justifyContent: "flex-end",
   },
   modalBox: {

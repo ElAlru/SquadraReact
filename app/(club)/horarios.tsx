@@ -362,7 +362,7 @@ const styles = StyleSheet.create({
     borderBottomColor: "transparent",
   },
   tabText: { fontSize: 14 },
-  teamScroll: { paddingHorizontal: 16, paddingVertical: 12, gap: 8 },
+  teamScroll: { paddingHorizontal: 20, paddingVertical: 12, gap: 8 },
   teamChip: {
     paddingHorizontal: 14,
     paddingVertical: 7,
