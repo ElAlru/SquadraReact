@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useFocusEffect } from "expo-router";
 import {
   View, Text, TouchableOpacity, ScrollView, Modal, TextInput,
   StyleSheet, Alert, ActivityIndicator, Switch, KeyboardAvoidingView, Platform
@@ -145,6 +146,19 @@ export default function GestionCoach() {
       setLoadingEvents(false);
     }
   }, [clubId, localTeamId, seasonLabel]);
+
+  const isMountedRef = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!isMountedRef.current) {
+        isMountedRef.current = true;
+        return;
+      }
+      let isActive = true;
+      fetchEvents();
+      return () => { isActive = false; };
+    }, [fetchEvents])
+  );
 
   useEffect(() => { fetchEvents(); }, [fetchEvents]);
 

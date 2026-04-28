@@ -4,6 +4,7 @@ import { router } from 'expo-router'
 import { useTheme } from '../../lib/useTheme'
 import ScreenContainer from '../../components/ScreenContainer'
 import { apiFetch } from '../../lib/api'
+import DateTimePicker from '@react-native-community/datetimepicker'
 
 const ROLES = [
   { value: 'PLAYER', label: '⚽ Jugador' },
@@ -11,6 +12,16 @@ const ROLES = [
   { value: 'RELATIVE', label: '👨‍👧 Familiar' },
   { value: 'OTHER', label: '👤 Otro' },
 ]
+
+function formatDate(date: Date): string {
+  return date.toISOString().split('T')[0]
+}
+
+function formatDisplayDate(isoDate: string): string {
+  if (!isoDate) return ''
+  const [year, month, day] = isoDate.split('-')
+  return `${day}/${month}/${year}`
+}
 
 export default function Unirse() {
   const c = useTheme()
@@ -20,46 +31,90 @@ export default function Unirse() {
   const [sent, setSent] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
 
+  // PLAYER
+  const [playerBirthDate, setPlayerBirthDate] = useState('')
+  const [showPlayerDatePicker, setShowPlayerDatePicker] = useState(false)
+  const [playerPickerDate, setPlayerPickerDate] = useState(new Date(2005, 0, 1))
+
+  // COACH
+  const [coachLicense, setCoachLicense] = useState('')
+
+  // RELATIVE
+  const [childHasAccount, setChildHasAccount] = useState<boolean | null>(null)
+  const [childName, setChildName] = useState('')
+  const [newChildFirstName, setNewChildFirstName] = useState('')
+  const [newChildLastName, setNewChildLastName] = useState('')
+  const [newChildBirthDate, setNewChildBirthDate] = useState('')
+  const [showChildDatePicker, setShowChildDatePicker] = useState(false)
+  const [childPickerDate, setChildPickerDate] = useState(new Date(2012, 0, 1))
+
   const handleJoin = async () => {
-    const cleanCode = codigo.toUpperCase().trim();
-    if (!cleanCode || cleanCode.length !== 6) return;
-    setIsLoading(true);
-    
+    const cleanCode = codigo.toUpperCase().trim()
+    if (!cleanCode || cleanCode.length !== 6) return
+
+    if (rolSeleccionado === 'PLAYER' && !playerBirthDate) {
+      Alert.alert('Campo requerido', 'Por favor, indica la fecha de nacimiento del jugador.')
+      return
+    }
+    if (rolSeleccionado === 'RELATIVE' && childHasAccount === null) {
+      Alert.alert('Campo requerido', 'Indica si tu hijo/a ya tiene cuenta en la app.')
+      return
+    }
+    if (rolSeleccionado === 'RELATIVE' && childHasAccount === false) {
+      if (!newChildFirstName.trim() || !newChildLastName.trim()) {
+        Alert.alert('Campo requerido', 'Por favor, indica el nombre y apellidos de tu hijo/a.')
+        return
+      }
+    }
+
+    let metadata: Record<string, any> = {}
+    if (rolSeleccionado === 'PLAYER') {
+      metadata = { birthDate: playerBirthDate }
+    } else if (rolSeleccionado === 'COACH' && coachLicense.trim()) {
+      metadata = { license: coachLicense.trim() }
+    } else if (rolSeleccionado === 'RELATIVE') {
+      if (childHasAccount === true) {
+        metadata = { childHasAccount: true, childName: childName.trim() }
+      } else {
+        metadata = {
+          childHasAccount: false,
+          childFirstName: newChildFirstName.trim(),
+          childLastName: newChildLastName.trim(),
+          childBirthDate: newChildBirthDate || null,
+        }
+      }
+    }
+
+    setIsLoading(true)
     try {
-      console.log("➡️ Enviando petición con código:", cleanCode);
-      const res = await apiFetch("/api/clubs/join", {
-        method: "POST",
+      const res = await apiFetch('/api/clubs/join', {
+        method: 'POST',
         body: JSON.stringify({
           invitationCode: cleanCode,
           requestedRole: rolSeleccionado,
-          message: mensaje
-        })
-      });
-      
+          message: mensaje,
+          metadata,
+        }),
+      })
+
       if (res.ok) {
-        setSent(true);
+        setSent(true)
       } else {
-        // Leemos la respuesta cruda del backend
-        const errorText = await res.text();
-        console.log("🚨 RESPUESTA DEL BACKEND (Error 400):", errorText);
-        
+        const errorText = await res.text()
         try {
-          // Intentamos sacarlo como JSON si viene bien formateado
-          const data = JSON.parse(errorText);
-          Alert.alert("Aviso", data.error || "No se pudo unir al club");
-        } catch (e) {
-          // Si es texto plano, lo mostramos tal cual
-          Alert.alert("Aviso", errorText);
+          const data = JSON.parse(errorText)
+          Alert.alert('Aviso', data.error || data.message || 'No se pudo unir al club')
+        } catch {
+          Alert.alert('Aviso', errorText || 'No se pudo unir al club')
         }
       }
     } catch (err: any) {
-      console.log("💥 EXPLOSIÓN EN EL CÓDIGO (Catch):", err.message);
-      Alert.alert("Error", "Problema de conexión con el servidor.");
+      Alert.alert('Error', 'Problema de conexión con el servidor.')
     } finally {
-      setIsLoading(false);
+      setIsLoading(false)
     }
   }
-  
+
   if (sent) {
     return (
       <ScreenContainer>
@@ -95,6 +150,7 @@ export default function Unirse() {
           showsVerticalScrollIndicator={false}
         >
           <Text style={[styles.title, { color: c.texto, marginTop: 40 }]}>Unirme a un club</Text>
+
           <Text style={[styles.label, { color: c.subtexto }]}>Código de invitación</Text>
           <TextInput
             style={[styles.codeInput, { backgroundColor: c.input, color: c.texto, borderColor: c.bordeInput }]}
@@ -120,7 +176,7 @@ export default function Unirse() {
                     {
                       backgroundColor: isSelected ? c.boton : c.input,
                       borderColor: isSelected ? c.boton : c.bordeInput,
-                    }
+                    },
                   ]}
                   onPress={() => setRolSeleccionado(rol.value)}
                   activeOpacity={0.8}
@@ -132,6 +188,177 @@ export default function Unirse() {
               )
             })}
           </View>
+
+          {/* PLAYER */}
+          {rolSeleccionado === 'PLAYER' && (
+            <View style={styles.extraFields}>
+              <Text style={[styles.label, { color: c.subtexto }]}>Fecha de nacimiento *</Text>
+              {Platform.OS === 'web' ? (
+                <View style={[styles.webDateWrapper, { backgroundColor: c.input, borderColor: c.bordeInput }]}>
+                  <input
+                    type="date"
+                    value={playerBirthDate}
+                    max={new Date().toISOString().split('T')[0]}
+                    onChange={(e) => setPlayerBirthDate(e.target.value)}
+                    style={{
+                      width: '100%', background: 'transparent', border: 'none',
+                      fontSize: 15, color: c.texto, outline: 'none', padding: 4,
+                    }}
+                  />
+                </View>
+              ) : (
+                <>
+                  <TouchableOpacity
+                    style={[styles.dateButton, { backgroundColor: c.input, borderColor: c.bordeInput }]}
+                    onPress={() => setShowPlayerDatePicker(true)}
+                  >
+                    <Text style={{ color: playerBirthDate ? c.texto : c.subtexto, fontSize: 15 }}>
+                      {playerBirthDate ? formatDisplayDate(playerBirthDate) : 'Seleccionar fecha...'}
+                    </Text>
+                  </TouchableOpacity>
+                  {showPlayerDatePicker && (
+                    <DateTimePicker
+                      value={playerPickerDate}
+                      mode="date"
+                      display="default"
+                      maximumDate={new Date()}
+                      onChange={(_, date) => {
+                        setShowPlayerDatePicker(Platform.OS === 'ios')
+                        if (date) {
+                          setPlayerPickerDate(date)
+                          setPlayerBirthDate(formatDate(date))
+                        }
+                      }}
+                    />
+                  )}
+                </>
+              )}
+            </View>
+          )}
+
+          {/* COACH */}
+          {rolSeleccionado === 'COACH' && (
+            <View style={styles.extraFields}>
+              <Text style={[styles.label, { color: c.subtexto }]}>
+                Número de licencia{' '}
+                <Text style={{ fontStyle: 'italic' }}>(opcional)</Text>
+              </Text>
+              <TextInput
+                style={[styles.fieldInput, { backgroundColor: c.input, color: c.texto, borderColor: c.bordeInput }]}
+                placeholder="Ej: RFC-12345"
+                placeholderTextColor={c.subtexto}
+                value={coachLicense}
+                onChangeText={setCoachLicense}
+                autoCapitalize="characters"
+              />
+            </View>
+          )}
+
+          {/* RELATIVE */}
+          {rolSeleccionado === 'RELATIVE' && (
+            <View style={styles.extraFields}>
+              <Text style={[styles.label, { color: c.subtexto }]}>¿Tu hijo/a ya tiene cuenta en la app? *</Text>
+              <View style={styles.radioRow}>
+                {([{ label: 'Sí', value: true }, { label: 'No', value: false }] as const).map((opt) => (
+                  <TouchableOpacity
+                    key={String(opt.value)}
+                    style={[
+                      styles.radioButton,
+                      {
+                        backgroundColor: childHasAccount === opt.value ? c.boton : c.input,
+                        borderColor: childHasAccount === opt.value ? c.boton : c.bordeInput,
+                      },
+                    ]}
+                    onPress={() => setChildHasAccount(opt.value)}
+                  >
+                    <Text style={{ color: childHasAccount === opt.value ? 'white' : c.texto, fontWeight: '600' }}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {childHasAccount === true && (
+                <>
+                  <Text style={[styles.label, { color: c.subtexto, marginTop: 12 }]}>
+                    Nombre del jugador (para que el presidente lo identifique)
+                  </Text>
+                  <TextInput
+                    style={[styles.fieldInput, { backgroundColor: c.input, color: c.texto, borderColor: c.bordeInput }]}
+                    placeholder="Nombre completo del jugador"
+                    placeholderTextColor={c.subtexto}
+                    value={childName}
+                    onChangeText={setChildName}
+                  />
+                </>
+              )}
+
+              {childHasAccount === false && (
+                <>
+                  <Text style={[styles.label, { color: c.subtexto, marginTop: 12 }]}>Nombre *</Text>
+                  <TextInput
+                    style={[styles.fieldInput, { backgroundColor: c.input, color: c.texto, borderColor: c.bordeInput }]}
+                    placeholder="Nombre"
+                    placeholderTextColor={c.subtexto}
+                    value={newChildFirstName}
+                    onChangeText={setNewChildFirstName}
+                  />
+                  <Text style={[styles.label, { color: c.subtexto, marginTop: 12 }]}>Apellidos *</Text>
+                  <TextInput
+                    style={[styles.fieldInput, { backgroundColor: c.input, color: c.texto, borderColor: c.bordeInput }]}
+                    placeholder="Apellidos"
+                    placeholderTextColor={c.subtexto}
+                    value={newChildLastName}
+                    onChangeText={setNewChildLastName}
+                  />
+                  <Text style={[styles.label, { color: c.subtexto, marginTop: 12 }]}>
+                    Fecha de nacimiento{' '}
+                    <Text style={{ fontStyle: 'italic' }}>(opcional)</Text>
+                  </Text>
+                  {Platform.OS === 'web' ? (
+                    <View style={[styles.webDateWrapper, { backgroundColor: c.input, borderColor: c.bordeInput }]}>
+                      <input
+                        type="date"
+                        value={newChildBirthDate}
+                        max={new Date().toISOString().split('T')[0]}
+                        onChange={(e) => setNewChildBirthDate(e.target.value)}
+                        style={{
+                          width: '100%', background: 'transparent', border: 'none',
+                          fontSize: 15, color: c.texto, outline: 'none', padding: 4,
+                        }}
+                      />
+                    </View>
+                  ) : (
+                    <>
+                      <TouchableOpacity
+                        style={[styles.dateButton, { backgroundColor: c.input, borderColor: c.bordeInput }]}
+                        onPress={() => setShowChildDatePicker(true)}
+                      >
+                        <Text style={{ color: newChildBirthDate ? c.texto : c.subtexto, fontSize: 15 }}>
+                          {newChildBirthDate ? formatDisplayDate(newChildBirthDate) : 'Seleccionar fecha...'}
+                        </Text>
+                      </TouchableOpacity>
+                      {showChildDatePicker && (
+                        <DateTimePicker
+                          value={childPickerDate}
+                          mode="date"
+                          display="default"
+                          maximumDate={new Date()}
+                          onChange={(_, date) => {
+                            setShowChildDatePicker(Platform.OS === 'ios')
+                            if (date) {
+                              setChildPickerDate(date)
+                              setNewChildBirthDate(formatDate(date))
+                            }
+                          }}
+                        />
+                      )}
+                    </>
+                  )}
+                </>
+              )}
+            </View>
+          )}
 
           <Text style={[styles.label, { color: c.subtexto }]}>
             Mensaje para el presidente{' '}
@@ -176,8 +403,14 @@ const styles = StyleSheet.create({
   rolesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, width: '100%', marginBottom: 24 },
   rolCard: { paddingVertical: 12, paddingHorizontal: 16, borderRadius: 12, borderWidth: 1.5, minWidth: '45%', flex: 1, alignItems: 'center' },
   rolText: { fontWeight: '600', fontSize: 14 },
+  extraFields: { width: '100%', marginBottom: 24 },
+  fieldInput: { width: '100%', padding: 14, borderRadius: 12, borderWidth: 1, fontSize: 15 },
+  dateButton: { width: '100%', padding: 14, borderRadius: 12, borderWidth: 1 },
+  webDateWrapper: { width: '100%', padding: 14, borderRadius: 12, borderWidth: 1 },
+  radioRow: { flexDirection: 'row', gap: 12 },
+  radioButton: { flex: 1, paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, alignItems: 'center' },
   messageInput: { width: '100%', padding: 14, borderRadius: 12, borderWidth: 1, fontSize: 15, minHeight: 90, marginBottom: 4 },
   charCount: { alignSelf: 'flex-end', fontSize: 12, marginBottom: 16 },
   button: { padding: 18, borderRadius: 12, alignItems: 'center', width: '100%' },
-  buttonText: { color: 'white', fontWeight: 'bold', fontSize: 16 }
+  buttonText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
 })

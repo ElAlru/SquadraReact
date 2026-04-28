@@ -1,8 +1,9 @@
 import { Drawer } from 'expo-router/drawer'
 import { useTranslation } from 'react-i18next'
-import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { Alert, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useTheme } from '../../lib/useTheme'
 import { useAuthStore } from '../../lib/store'
+import { supabase } from '../../lib/supabase'
 import { useRouter } from 'expo-router'
 import WebNavBar from '../../components/WebNavBar'
 
@@ -36,8 +37,14 @@ function DrawerContent({ navigation }: { navigation: any }) {
   ]
 
   const handleLogout = async () => {
-    await logout()
-    router.replace('/login')
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      logout();
+      router.replace('/(auth)');
+    } catch (err: any) {
+      Alert.alert('Error al cerrar sesión', err?.message ?? 'No se pudo cerrar la sesión. Inténtalo de nuevo.');
+    }
   }
 
   return (

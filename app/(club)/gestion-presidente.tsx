@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
+import { useFocusEffect } from "expo-router";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { useTheme } from "../../lib/useTheme";
 import { useAuthStore } from "../../lib/store";
@@ -16,6 +17,20 @@ export default function GestionPresidente() {
   const seasonLabel = activeSeasonName || "24-25";
 
   const [activeTab, setActiveTab] = useState<Tab>("SOLICITUDES");
+  const [refreshKey, setRefreshKey] = useState(0);
+  const initialFocusDone = useRef(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!initialFocusDone.current) {
+        initialFocusDone.current = true;
+        return;
+      }
+      let isActive = true;
+      setRefreshKey((k) => k + 1);
+      return () => { isActive = false; };
+    }, [])
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: c.fondo }}>
@@ -62,9 +77,9 @@ export default function GestionPresidente() {
 
       {/* Contenido (Renderizado Condicional) */}
       <View style={{ flex: 1 }}>
-        {activeTab === "SOLICITUDES" && <TabSolicitudes />}
-        {activeTab === "CUOTAS" && <TabCuotas />}
-        {activeTab === "EQUIPOS" && <TabEquipos />}
+        {activeTab === "SOLICITUDES" && <TabSolicitudes key={refreshKey} />}
+        {activeTab === "CUOTAS" && <TabCuotas key={refreshKey} />}
+        {activeTab === "EQUIPOS" && <TabEquipos key={refreshKey} />}
       </View>
     </View>
   );

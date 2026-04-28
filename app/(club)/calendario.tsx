@@ -1,5 +1,6 @@
 import DateTimePicker from "@react-native-community/datetimepicker";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useFocusEffect } from "expo-router";
 import {
   ActivityIndicator,
   Alert,
@@ -167,6 +168,21 @@ export default function Calendario() {
       setClubFields(await res.json());
     } catch {}
   }, [clubId, canCreate]);
+
+  const isMountedRef = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!isMountedRef.current) {
+        isMountedRef.current = true;
+        return;
+      }
+      let isActive = true;
+      fetchTeams();
+      fetchFields();
+      fetchEvents();
+      return () => { isActive = false; };
+    }, [fetchTeams, fetchFields, fetchEvents])
+  );
 
   useEffect(() => { fetchTeams(); fetchFields(); }, [fetchTeams, fetchFields]);
   useEffect(() => { fetchEvents(); }, [fetchEvents]);

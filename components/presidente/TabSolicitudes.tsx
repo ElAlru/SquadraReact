@@ -13,6 +13,7 @@ type KinshipType = "FATHER" | "MOTHER" | "LEGAL_GUARDIAN" | "OTHER";
 interface JoinRequest {
   id: number; userId: string; userFullName: string; userEmail: string;
   requestedRole: string; status: string; message: string | null; requestedAt: string;
+  metadata?: Record<string, any>;
 }
 interface Team { id: number; category: string; gender: string; suffix: string; seasonLabel: string; }
 interface TeamPlayer { id: number; firstName: string; lastName?: string; }
@@ -56,6 +57,8 @@ export default function TabSolicitudes() {
   const [assignKinship, setAssignKinship] = useState<KinshipType>("FATHER");
   const [assignPlayerPosition, setAssignPlayerPosition] = useState<PlayerPosition>("MIDFIELDER");
   const [assignLinkedPlayerId, setAssignLinkedPlayerId] = useState<number | null>(null);
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [teams, setTeams] = useState<Team[]>([]);
   const [teamPlayers, setTeamPlayers] = useState<TeamPlayer[]>([]);
@@ -109,28 +112,67 @@ export default function TabSolicitudes() {
   };
 
   const handleReview = async () => {
+    console.log("[handleReview] Función iniciada");
     if (!selectedRequest) return;
+    console.log("[handleReview] Estado actual:", { reviewDecision, assignRole, assignTeamId, assignPlayerPosition });
     try {
       const payload: Record<string, unknown> = { decision: reviewDecision, assignedRole: assignRole };
       if (reviewDecision === "APPROVED") {
         if (assignRole === "PLAYER") {
-          if (!assignTeamId) return Alert.alert("Atención", "Debes seleccionar un equipo.");
-          payload.teamId = assignTeamId; payload.playerPosition = assignPlayerPosition;
+          if (!assignTeamId) {
+            console.warn("[handleReview] Validación fallida: assignTeamId es null");
+            return Alert.alert("Atención", "Debes seleccionar un equipo para el jugador.");
+          }
+          if (!assignPlayerPosition) {
+            console.warn("[handleReview] Validación fallida: assignPlayerPosition es null");
+            return Alert.alert("Atención", "Debes seleccionar una posición.");
+          }
+          payload.teamId = assignTeamId;
+          payload.playerPosition = assignPlayerPosition;
         } else if (assignRole === "COACH") {
-          if (!assignTeamId) return Alert.alert("Atención", "Debes seleccionar un equipo.");
-          payload.teamId = assignTeamId; payload.staffRoleType = assignStaffRole;
+          if (!assignTeamId) {
+            console.warn("[handleReview] Validación fallida: assignTeamId es null (COACH)");
+            return Alert.alert("Atención", "Debes seleccionar un equipo para el entrenador.");
+          }
+          if (!assignStaffRole) {
+            console.warn("[handleReview] Validación fallida: assignStaffRole es null");
+            return Alert.alert("Atención", "Debes seleccionar un rol técnico.");
+          }
+          payload.teamId = assignTeamId;
+          payload.staffRoleType = assignStaffRole;
         } else if (assignRole === "RELATIVE") {
-          if (!assignLinkedPlayerId) return Alert.alert("Atención", "Debes vincular un jugador/a.");
-          payload.linkedPlayerId = assignLinkedPlayerId; payload.kinshipType = assignKinship;
+          const childHasAccount = selectedRequest?.metadata?.childHasAccount;
+          if (childHasAccount !== false) {
+            // Hijo con cuenta existente → el presidente debe seleccionar la ficha
+            if (!assignLinkedPlayerId) {
+              console.warn("[handleReview] Validación fallida: assignLinkedPlayerId es null");
+              return Alert.alert("Atención", "Debes vincular un jugador/a existente.");
+            }
+            payload.linkedPlayerId = assignLinkedPlayerId;
+          }
+          // Si childHasAccount === false, el backend crea el jugador desde el metadata
+          payload.kinshipType = assignKinship;
         }
       }
-      await apiFetch(`/api/president/requests/${selectedRequest.id}?clubId=${clubId}`, {
+      setIsSubmitting(true);
+      console.log("[handleReview] Enviando payload:", JSON.stringify(payload));
+      const res = await apiFetch(`/api/president/requests/${selectedRequest.id}?clubId=${clubId}`, {
         method: "PATCH", body: JSON.stringify(payload),
       });
+      console.log("[handleReview] Respuesta recibida, status:", res.status);
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(errBody?.message ?? `Error ${res.status}`);
+      }
       setReviewModal(false);
       setRequests((prev) => prev.filter((r) => r.id !== selectedRequest.id));
       Alert.alert("Éxito", "Solicitud procesada correctamente.");
-    } catch { Alert.alert("Error", "No se pudo procesar."); }
+    } catch (err: any) {
+      console.error("[handleReview] Error capturado:", err);
+      Alert.alert("Error al procesar la solicitud", err?.message ?? "No se pudo procesar. Inténtalo de nuevo.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -247,36 +289,66 @@ export default function TabSolicitudes() {
 
                   {assignRole === "RELATIVE" && (
                     <View>
-                      <Text style={[styles.inputLabel, { color: c.texto }]}>{"2. Equipo del jugador/a"}</Text>
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
-                        {teams.map((t) => (
-                          <TouchableOpacity key={t.id} onPress={() => setAssignTeamId(t.id)} style={[styles.chip, assignTeamId === t.id ? { backgroundColor: c.boton } : { backgroundColor: c.input, borderWidth: 1, borderColor: c.bordeInput }]}>
-                            <Text style={{ color: assignTeamId === t.id ? "#fff" : c.subtexto, fontSize: 12 }}>{`${t.category} ${t.suffix}`}</Text>
-                          </TouchableOpacity>
-                        ))}
-                      </ScrollView>
-                      <Text style={[styles.inputLabel, { color: c.texto }]}>{"3. Parentesco"}</Text>
-                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
-                        {KINSHIP_TYPES.map((k) => (
-                          <TouchableOpacity key={k.value} onPress={() => setAssignKinship(k.value)} style={[styles.chip, assignKinship === k.value ? { backgroundColor: c.boton } : { backgroundColor: c.input, borderWidth: 1, borderColor: c.bordeInput }]}>
-                            <Text style={{ color: assignKinship === k.value ? "#fff" : c.subtexto, fontSize: 12 }}>{k.label}</Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                      {assignTeamId && teamPlayers.length > 0 && (
+                      {selectedRequest?.metadata?.childHasAccount === false ? (
+                        // Hijo sin cuenta: se creará jugador automáticamente desde metadata
                         <View>
-                          <Text style={[styles.inputLabel, { color: c.texto }]}>{"4. Vincular a jugador/a"}</Text>
+                          <View style={[styles.infoBox, { backgroundColor: c.input, borderColor: c.bordeInput }]}>
+                            <Text style={{ color: c.texto, fontSize: 13, fontWeight: "600", marginBottom: 4 }}>
+                              {"Se creará un nuevo jugador/a:"}
+                            </Text>
+                            <Text style={{ color: c.subtexto, fontSize: 13 }}>
+                              {`${selectedRequest.metadata.childFirstName ?? ""} ${selectedRequest.metadata.childLastName ?? ""}`.trim() || "Sin nombre"}
+                            </Text>
+                            {!!selectedRequest.metadata.childBirthDate && (
+                              <Text style={{ color: c.subtexto, fontSize: 12, marginTop: 2 }}>
+                                {`Nacimiento: ${selectedRequest.metadata.childBirthDate}`}
+                              </Text>
+                            )}
+                          </View>
+                          <Text style={[styles.inputLabel, { color: c.texto, marginTop: 12 }]}>{"2. Parentesco"}</Text>
+                          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+                            {KINSHIP_TYPES.map((k) => (
+                              <TouchableOpacity key={k.value} onPress={() => setAssignKinship(k.value)} style={[styles.chip, assignKinship === k.value ? { backgroundColor: c.boton } : { backgroundColor: c.input, borderWidth: 1, borderColor: c.bordeInput }]}>
+                                <Text style={{ color: assignKinship === k.value ? "#fff" : c.subtexto, fontSize: 12 }}>{k.label}</Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        </View>
+                      ) : (
+                        // Hijo con cuenta existente: el presidente selecciona la ficha
+                        <View>
+                          <Text style={[styles.inputLabel, { color: c.texto }]}>{"2. Equipo del jugador/a"}</Text>
                           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
-                            {teamPlayers.map((p) => (
-                              <TouchableOpacity key={p.id} onPress={() => setAssignLinkedPlayerId(p.id)} style={[styles.chip, assignLinkedPlayerId === p.id ? { backgroundColor: c.boton } : { backgroundColor: c.input, borderWidth: 1, borderColor: c.bordeInput }]}>
-                                <Text style={{ color: assignLinkedPlayerId === p.id ? "#fff" : c.subtexto, fontSize: 12 }}>{p.firstName} {p.lastName || ""}</Text>
+                            {teams.map((t) => (
+                              <TouchableOpacity key={t.id} onPress={() => setAssignTeamId(t.id)} style={[styles.chip, assignTeamId === t.id ? { backgroundColor: c.boton } : { backgroundColor: c.input, borderWidth: 1, borderColor: c.bordeInput }]}>
+                                <Text style={{ color: assignTeamId === t.id ? "#fff" : c.subtexto, fontSize: 12 }}>{`${t.category} ${t.suffix}`}</Text>
                               </TouchableOpacity>
                             ))}
                           </ScrollView>
+                          <Text style={[styles.inputLabel, { color: c.texto }]}>{"3. Parentesco"}</Text>
+                          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+                            {KINSHIP_TYPES.map((k) => (
+                              <TouchableOpacity key={k.value} onPress={() => setAssignKinship(k.value)} style={[styles.chip, assignKinship === k.value ? { backgroundColor: c.boton } : { backgroundColor: c.input, borderWidth: 1, borderColor: c.bordeInput }]}>
+                                <Text style={{ color: assignKinship === k.value ? "#fff" : c.subtexto, fontSize: 12 }}>{k.label}</Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                          {assignTeamId && teamPlayers.length > 0 && (
+                            <View>
+                              <Text style={[styles.inputLabel, { color: c.texto }]}>{"4. Vincular a jugador/a"}</Text>
+                              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+                                {teamPlayers.map((p) => (
+                                  <TouchableOpacity key={p.id} onPress={() => setAssignLinkedPlayerId(p.id)} style={[styles.chip, assignLinkedPlayerId === p.id ? { backgroundColor: c.boton } : { backgroundColor: c.input, borderWidth: 1, borderColor: c.bordeInput }]}>
+                                    <Text style={{ color: assignLinkedPlayerId === p.id ? "#fff" : c.subtexto, fontSize: 12 }}>{p.firstName} {p.lastName || ""}</Text>
+                                  </TouchableOpacity>
+                                ))}
+                              </ScrollView>
+                            </View>
+                          )}
+                          {assignTeamId && teamPlayers.length === 0 && (
+                            <Text style={{ color: c.subtexto, fontSize: 13, marginBottom: 16 }}>{"No hay jugadores en ese equipo aún."}</Text>
+                          )}
                         </View>
-                      )}
-                      {assignTeamId && teamPlayers.length === 0 && (
-                        <Text style={{ color: c.subtexto, fontSize: 13, marginBottom: 16 }}>{"No hay jugadores en ese equipo aún."}</Text>
                       )}
                     </View>
                   )}
@@ -287,8 +359,8 @@ export default function TabSolicitudes() {
                 <TouchableOpacity style={[styles.btnMain, { backgroundColor: c.input, flex: 1, borderWidth: 1, borderColor: c.bordeInput }]} onPress={() => setReviewModal(false)}>
                   <Text style={{ color: c.texto, fontWeight: "bold" }}>{"Cancelar"}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.btnMain, { backgroundColor: reviewDecision === "APPROVED" ? c.boton : "#DC2626", flex: 1 }]} onPress={handleReview}>
-                  <Text style={{ color: "#fff", fontWeight: "bold" }}>{"Confirmar"}</Text>
+                <TouchableOpacity style={[styles.btnMain, { backgroundColor: reviewDecision === "APPROVED" ? c.boton : "#DC2626", flex: 1, opacity: isSubmitting ? 0.5 : 1 }]} onPress={handleReview} disabled={isSubmitting}>
+                  <Text style={{ color: "#fff", fontWeight: "bold" }}>{isSubmitting ? "Procesando..." : "Confirmar"}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -311,4 +383,5 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 20, fontWeight: "bold", marginBottom: 20 },
   roleBadge: { alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1, marginTop: 6 },
   emptyBox: { borderRadius: 16, borderWidth: 1, padding: 30, marginBottom: 12, alignItems: "center" },
+  infoBox: { borderRadius: 12, borderWidth: 1, padding: 12, marginBottom: 4 },
 });
