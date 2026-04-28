@@ -61,6 +61,14 @@ const toDateString = (d: Date) =>
 const toTimeString = (d: Date) =>
   `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 
+const DAY_NAMES = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+const formatSelectedDate = (dateStr: string | null): string => {
+  if (!dateStr) return "Eventos del día";
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  return `${DAY_NAMES[date.getDay()]} ${d} de ${MESES[m - 1]}`;
+};
+
 export default function Calendario() {
   const c = useTheme();
 
@@ -92,6 +100,7 @@ export default function Calendario() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedDayEvents, setSelectedDayEvents] = useState<CalendarEvent[]>([]);
   const [dayModal, setDayModal] = useState(false);
   const [createModal, setCreateModal] = useState(false);
@@ -330,20 +339,26 @@ export default function Calendario() {
           daysRow.push(<View key={`es-${col}`} style={styles.dayCellEmpty} />);
         } else if (dayCount <= daysInMonth) {
           const currentDate = dayCount;
+          const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(currentDate).padStart(2, "0")}`;
           const dayEvents = events.filter((e) => {
             const d = new Date(e.startTime);
             return d.getDate() === currentDate && d.getMonth() === month && d.getFullYear() === year;
           });
           const hasMatch = dayEvents.some((e) => e.type === "MATCH");
           const hasTraining = dayEvents.some((e) => e.type === "TRAINING");
+          const isSelected = selectedDate === dateStr;
           daysRow.push(
             <TouchableOpacity
               key={`day-${currentDate}`}
-              style={[styles.dayCell, { backgroundColor: c.input }]}
-              onPress={() => { if (dayEvents.length > 0) { setSelectedDayEvents(dayEvents); setDayModal(true); } }}
-              activeOpacity={dayEvents.length > 0 ? 0.7 : 1}
+              style={[
+                styles.dayCell,
+                { backgroundColor: isSelected ? `${c.boton}18` : c.input },
+                isSelected && { borderWidth: 1.5, borderColor: c.boton },
+              ]}
+              onPress={() => { setSelectedDate(dateStr); setSelectedDayEvents(dayEvents); setDayModal(true); }}
+              activeOpacity={0.7}
             >
-              <Text style={[styles.dayText, { color: c.texto }]}>{currentDate}</Text>
+              <Text style={[styles.dayText, { color: isSelected ? c.boton : c.texto, fontWeight: isSelected ? "700" : "600" }]}>{currentDate}</Text>
               <View style={styles.dotsContainer}>
                 {hasMatch && <View style={[styles.dot, { backgroundColor: c.boton }]} />}
                 {hasTraining && <View style={[styles.dot, { backgroundColor: "#3b82f6" }]} />}
@@ -541,34 +556,59 @@ export default function Calendario() {
           </View>
         </Modal>
 
-        {/* ─── MODAL DÍA — centrado ────────────────────────────────────────── */}
-        <Modal visible={dayModal} transparent animationType="fade">
-          <View style={styles.centeredOverlay}>
-            <View style={[styles.centeredBox, { backgroundColor: c.fondo }]}>
-              <Text style={[styles.modalTitle, { color: c.texto, marginBottom: 14 }]}>Eventos del día</Text>
-              <ScrollView showsVerticalScrollIndicator={false}>
-                {selectedDayEvents.map((item) => (
-                  <View
-                    key={`${item.type}-${item.id}`}
-                    style={[styles.card, { backgroundColor: c.input, borderColor: c.bordeInput, borderLeftWidth: 4, borderLeftColor: item.type === "MATCH" ? c.boton : "#3b82f6", marginBottom: 10 }]}
-                  >
-                    <Text style={[styles.eventoTitulo, { color: c.texto }]}>
-                      {item.type === "MATCH" ? "⚽" : "🏃"} {item.title}
-                    </Text>
-                    <Text style={[styles.metaText, { color: c.subtexto }]}>
-                      🕒 {new Date(item.startTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      {item.endTime ? ` – ${new Date(item.endTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}
-                    </Text>
-                    {item.location && <Text style={[styles.metaText, { color: c.subtexto, marginTop: 2 }]}>📍 {item.location}</Text>}
-                    {item.teamName && <Text style={[styles.metaText, { color: c.subtexto, marginTop: 2 }]}>👥 {item.teamName}</Text>}
-                  </View>
-                ))}
-              </ScrollView>
-              <TouchableOpacity style={[styles.btnCrear, { backgroundColor: c.boton, marginTop: 12 }]} onPress={() => setDayModal(false)}>
-                <Text style={styles.btnCrearText}>Cerrar</Text>
+        {/* ─── MODAL DÍA — bottom sheet ────────────────────────────────────── */}
+        <Modal visible={dayModal} transparent animationType="slide" onRequestClose={() => setDayModal(false)}>
+          <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setDayModal(false)}>
+            <TouchableOpacity activeOpacity={1} style={[styles.modalBox, { backgroundColor: c.fondo }]} onPress={() => {}}>
+              <View style={styles.dayModalHandle} />
+              <Text style={[styles.modalTitle, { color: c.texto, marginBottom: 4 }]}>
+                {formatSelectedDate(selectedDate)}
+              </Text>
+              {selectedDayEvents.length === 0 ? (
+                <View style={[styles.emptyCard, { backgroundColor: c.input, borderColor: c.bordeInput, marginTop: 8 }]}>
+                  <Text style={{ fontSize: 26, marginBottom: 6 }}>📭</Text>
+                  <Text style={[styles.metaText, { color: c.subtexto }]}>Sin eventos este día</Text>
+                </View>
+              ) : (
+                <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 340 }}>
+                  {selectedDayEvents.map((item) => {
+                    const accentColor = item.type === "MATCH" ? c.boton : "#3b82f6";
+                    return (
+                      <View
+                        key={`${item.type}-${item.id}`}
+                        style={[styles.dayEventCard, { backgroundColor: c.input, borderColor: c.bordeInput, borderLeftColor: accentColor }]}
+                      >
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 5 }}>
+                          <View style={[styles.dayEventBadge, { backgroundColor: `${accentColor}20` }]}>
+                            <Text style={{ fontSize: 10, fontWeight: "700", color: accentColor }}>
+                              {item.type === "MATCH" ? "PARTIDO" : "ENTRENO"}
+                            </Text>
+                          </View>
+                        </View>
+                        <Text style={[styles.eventoTitulo, { color: c.texto, marginBottom: 6 }]}>{item.title}</Text>
+                        <Text style={[styles.metaText, { color: c.subtexto }]}>
+                          🕒 {new Date(item.startTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          {item.endTime ? ` – ${new Date(item.endTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}
+                        </Text>
+                        {item.location && (
+                          <Text style={[styles.metaText, { color: c.subtexto, marginTop: 3 }]}>📍 {item.location}</Text>
+                        )}
+                        {item.teamName && (
+                          <Text style={[styles.metaText, { color: c.subtexto, marginTop: 3 }]}>👥 {item.teamName}</Text>
+                        )}
+                      </View>
+                    );
+                  })}
+                </ScrollView>
+              )}
+              <TouchableOpacity
+                style={[styles.btnCrear, { backgroundColor: c.input, borderWidth: 1, borderColor: c.bordeInput, marginTop: 14 }]}
+                onPress={() => setDayModal(false)}
+              >
+                <Text style={[styles.btnCrearText, { color: c.texto }]}>Cerrar</Text>
               </TouchableOpacity>
-            </View>
-          </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
         </Modal>
 
         {/* ─── MODAL CREAR ─────────────────────────────────────────────────── */}
@@ -758,14 +798,17 @@ const styles = StyleSheet.create({
   monthNav: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6, marginTop: 2 },
   navBtnText: { fontSize: 24, fontWeight: "bold", paddingHorizontal: 6 },
   monthText: { fontSize: 15, fontWeight: "bold" },
-  calendarWrapper: { borderRadius: 10, borderWidth: 1, padding: 5, paddingBottom: 6 },
+  calendarWrapper: { borderRadius: 10, borderWidth: 1, padding: 5, paddingBottom: 8 },
   weekRow: { flexDirection: "row", justifyContent: "space-around", marginBottom: 3 },
-  weekDayText: { flex: 1, textAlign: "center", fontSize: 10, fontWeight: "600" },
-  dayCell: { flex: 1, height: 46, alignItems: "center", justifyContent: "center", margin: 1, borderRadius: 5 },
-  dayCellEmpty: { flex: 1, height: 46, margin: 1 },
-  dayText: { fontSize: 11, fontWeight: "600" },
-  dotsContainer: { flexDirection: "row", gap: 2, marginTop: 2 },
-  dot: { width: 4, height: 4, borderRadius: 2 },
+  weekDayText: { flex: 1, textAlign: "center", fontSize: 12, fontWeight: "600" },
+  dayCell: { flex: 1, height: 52, alignItems: "center", justifyContent: "center", margin: 1, borderRadius: 7 },
+  dayCellEmpty: { flex: 1, height: 52, margin: 1 },
+  dayText: { fontSize: 14, fontWeight: "600" },
+  dotsContainer: { flexDirection: "row", gap: 3, marginTop: 3 },
+  dot: { width: 5, height: 5, borderRadius: 2.5 },
+  dayModalHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: "#ccc", alignSelf: "center", marginBottom: 16 },
+  dayEventCard: { borderRadius: 12, borderWidth: 1, borderLeftWidth: 4, padding: 12, marginBottom: 10 },
+  dayEventBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   legendRow: { flexDirection: "row", gap: 14, justifyContent: "flex-end", marginTop: 5, paddingRight: 2 },
   legendItem: { flexDirection: "row", alignItems: "center", gap: 4 },
   legendText: { fontSize: 10 },
