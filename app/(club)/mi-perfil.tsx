@@ -20,94 +20,111 @@ export default function MiPerfil() {
     i18n.changeLanguage(lang)
   }
 
+  const fullName = [profile?.firstName, profile?.lastName].filter(Boolean).join(" ") || "Usuario"
+  const initials = [profile?.firstName?.charAt(0), profile?.lastName?.charAt(0)]
+    .filter(Boolean)
+    .join("")
+    .toUpperCase() || "U"
+
   return (
     <ScreenContainer>
-    <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={styles.scroll}>
 
-      {/* Avatar y nombre */}
-      <View style={styles.avatarWrapper}>
-        <View style={[styles.avatar, { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` }]}>
-          <Text style={[styles.avatarText, { color: c.boton }]}>
-            {profile?.firstName?.charAt(0)?.toUpperCase() || 'U'}
-          </Text>
+        {/* Avatar y nombre */}
+        <View style={styles.avatarWrapper}>
+          <View style={[styles.avatar, { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` }]}>
+            <Text style={[styles.avatarText, { color: c.boton }]}>{initials}</Text>
+          </View>
+          <Text style={[styles.nombre, { color: c.texto }]}>{fullName}</Text>
+          <Text style={[styles.email, { color: c.subtexto }]}>{profile?.email}</Text>
         </View>
-        <Text style={[styles.nombre, { color: c.texto }]}>
-          {profile?.firstName} {profile?.lastName}
-        </Text>
-        <Text style={[styles.email, { color: c.subtexto }]}>{profile?.email}</Text>
-      </View>
 
-      {/* Datos del perfil */}
-      <View style={[styles.card, { backgroundColor: c.input, borderColor: c.bordeInput }]}>
-        <Text style={[styles.cardTitle, { color: c.subtexto }]}>{t('profile.data')}</Text>
-        <Fila label={t('profile.phone')} value={profile?.phone || '—'} c={c} />
-        <Fila
-          label={t('profile.document')}
-          value={profile?.docNumber ? `${profile.docType} · ${profile.docNumber}` : '—'}
-          c={c}
-        />
-      </View>
-
-      {/* Selector de idioma */}
-      <View style={[styles.card, { backgroundColor: c.input, borderColor: c.bordeInput }]}>
-        <Text style={[styles.cardTitle, { color: c.subtexto }]}>{t('profile.language')}</Text>
-        <View style={styles.opciones}>
-          {(['es', 'en'] as const).map((lang) => (
-            <TouchableOpacity
-              key={lang}
-              style={[styles.opcion, {
-                backgroundColor: language === lang ? c.boton : 'transparent',
-                borderColor: language === lang ? c.boton : c.bordeInput,
-              }]}
-              onPress={() => handleLanguage(lang)}
-            >
-              <Text style={[styles.opcionText, { color: language === lang ? '#fff' : c.texto }]}>
-                {lang === 'es' ? '🇪🇸 Español' : '🇬🇧 English'}
-              </Text>
-            </TouchableOpacity>
-          ))}
+        {/* Datos del perfil */}
+        <View style={[styles.card, { backgroundColor: c.input, borderColor: c.bordeInput }]}>
+          <Text style={[styles.cardTitle, { color: c.subtexto }]}>{t('profile.data')}</Text>
+          <Fila label={t('profile.phone')} value={profile?.phone || '—'} c={c} />
+          <Fila
+            label={t('profile.document')}
+            value={profile?.docNumber ? `${profile.docType} · ${profile.docNumber}` : '—'}
+            c={c}
+          />
         </View>
-      </View>
 
-      {/* Selector de tema */}
-      <View style={[styles.card, { backgroundColor: c.input, borderColor: c.bordeInput }]}>
-        <Text style={[styles.cardTitle, { color: c.subtexto }]}>{t('profile.theme')}</Text>
-        <View style={styles.opciones}>
-          {([
-            { value: 'auto', label: `⚙️ ${t('profile.themeAuto')}` },
-            { value: 'light', label: `☀️ ${t('profile.themeLight')}` },
-            { value: 'dark', label: `🌙 ${t('profile.themeDark')}` },
-          ] as const).map((opt) => (
-            <TouchableOpacity
-              key={opt.value}
-              style={[styles.opcion, {
-                backgroundColor: themeMode === opt.value ? c.boton : 'transparent',
-                borderColor: themeMode === opt.value ? c.boton : c.bordeInput,
-              }]}
-              onPress={() => setThemeMode(opt.value)}
-            >
-              <Text style={[styles.opcionText, { color: themeMode === opt.value ? '#fff' : c.texto }]}>
-                {opt.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
+        {/* Selector de idioma */}
+        <View style={[styles.card, { backgroundColor: c.input, borderColor: c.bordeInput }]}>
+          <Text style={[styles.cardTitle, { color: c.subtexto }]}>{t('profile.language')}</Text>
+          <View style={styles.opciones}>
+            {(['es', 'en'] as const).map((lang) => (
+              <TouchableOpacity
+                key={lang}
+                style={[styles.opcion, {
+                  backgroundColor: language === lang ? c.boton : 'transparent',
+                  borderColor: language === lang ? c.boton : c.bordeInput,
+                }]}
+                onPress={() => handleLanguage(lang)}
+              >
+                <Text style={[styles.opcionText, { color: language === lang ? '#fff' : c.texto }]}>
+                  {lang === 'es' ? '🇪🇸 Español' : '🇬🇧 English'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
-      </View>
 
-      {/* Cambiar de club */}
-      <TouchableOpacity
-        style={[styles.card, styles.cambiarClubBtn, { borderColor: `${c.boton}40`, backgroundColor: `${c.boton}08` }]}
-        onPress={() => router.replace('/(selector)')}
-      >
-        <Text style={{ fontSize: 20 }}>🔄</Text>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.cambiarClubTitle, { color: c.boton }]}>Cambiar de club</Text>
-          <Text style={[styles.cambiarClubSub, { color: c.subtexto }]}>Vuelve al selector sin cerrar sesión</Text>
+        {/* Selector de tema */}
+        <View style={[styles.card, { backgroundColor: c.input, borderColor: c.bordeInput }]}>
+          <Text style={[styles.cardTitle, { color: c.subtexto }]}>{t('profile.theme')}</Text>
+          <View style={styles.opciones}>
+            {([
+              { value: 'auto', label: `⚙️ ${t('profile.themeAuto')}` },
+              { value: 'light', label: `☀️ ${t('profile.themeLight')}` },
+              { value: 'dark', label: `🌙 ${t('profile.themeDark')}` },
+            ] as const).map((opt) => (
+              <TouchableOpacity
+                key={opt.value}
+                style={[styles.opcion, {
+                  backgroundColor: themeMode === opt.value ? c.boton : 'transparent',
+                  borderColor: themeMode === opt.value ? c.boton : c.bordeInput,
+                }]}
+                onPress={() => setThemeMode(opt.value)}
+              >
+                <Text style={[styles.opcionText, { color: themeMode === opt.value ? '#fff' : c.texto }]}>
+                  {opt.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
-        <Text style={{ color: c.boton, fontSize: 20 }}>›</Text>
-      </TouchableOpacity>
 
-    </ScrollView>
+        {/* Cambiar contraseña */}
+        <TouchableOpacity
+          style={[styles.card, styles.accionBtn, { borderColor: c.bordeInput, backgroundColor: c.input }]}
+          onPress={() => {
+            router.replace('/(auth)/recuperar-password');
+          }}
+        >
+          <Text style={{ fontSize: 20 }}>🔑</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.accionTitle, { color: c.texto }]}>Cambiar contraseña</Text>
+            <Text style={[styles.accionSub, { color: c.subtexto }]}>Te enviaremos un enlace a tu email</Text>
+          </View>
+          <Text style={{ color: c.subtexto, fontSize: 20 }}>›</Text>
+        </TouchableOpacity>
+
+        {/* Cambiar de club */}
+        <TouchableOpacity
+          style={[styles.card, styles.accionBtn, { borderColor: `${c.boton}40`, backgroundColor: `${c.boton}08` }]}
+          onPress={() => router.replace('/(selector)')}
+        >
+          <Text style={{ fontSize: 20 }}>🔄</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.accionTitle, { color: c.boton }]}>Cambiar de club</Text>
+            <Text style={[styles.accionSub, { color: c.subtexto }]}>Vuelve al selector sin cerrar sesión</Text>
+          </View>
+          <Text style={{ color: c.boton, fontSize: 20 }}>›</Text>
+        </TouchableOpacity>
+
+      </ScrollView>
     </ScreenContainer>
   )
 }
@@ -158,7 +175,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
   },
   opcionText: { fontSize: 14, fontWeight: '500' },
-  cambiarClubBtn: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  cambiarClubTitle: { fontSize: 15, fontWeight: '700' },
-  cambiarClubSub: { fontSize: 12, marginTop: 1 },
+  accionBtn: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  accionTitle: { fontSize: 15, fontWeight: '700' },
+  accionSub: { fontSize: 12, marginTop: 1 },
 })

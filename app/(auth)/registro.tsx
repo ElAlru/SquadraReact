@@ -312,11 +312,16 @@ export default function Register() {
             />
           </View>
 
-          <Text style={[styles.label, { color: c.subtexto }]}>{t("register.password", "Contraseña")} *</Text>
+          <Text style={[styles.label, { color: c.subtexto }]}>{t("register.password", "Contraseña")} * <Text style={{ fontWeight: "400", fontSize: 11 }}>(min. 6)</Text></Text>
           <TextInput
             style={[styles.input, { backgroundColor: c.input, borderColor: c.bordeInput, color: c.texto }]}
             value={password} onChangeText={setPassword} secureTextEntry placeholderTextColor={c.subtexto}
           />
+          {password.length > 0 && password.length < 6 && (
+            <Text style={{ color: c.error, fontSize: 12, marginTop: -10, marginBottom: 12, marginLeft: 4 }}>
+              ⚠ min. 6
+            </Text>
+          )}
 
           <Text style={[styles.label, { color: c.subtexto }]}>{t("register.confirmPassword", "Confirmar contraseña")} *</Text>
           <TextInput
