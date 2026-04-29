@@ -12,10 +12,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import ScreenContainer from "../../components/ScreenContainer";
 import { apiFetch } from "../../lib/api";
 import { useAuthStore } from "../../lib/store";
 import { useTheme } from "../../lib/useTheme";
-import ScreenContainer from "../../components/ScreenContainer";
 
 const POSICION_LABEL: Record<string, string> = {
   GOALKEEPER: "Portero",
@@ -31,68 +31,108 @@ const POSICION_COLOR: Record<string, string> = {
   FORWARD: "#16a34a",
 };
 
+/** Avatar reutilizable: muestra imagen si existe, o iniciales con color de fondo */
+function Avatar({
+  photoUrl,
+  initials,
+  size,
+  color,
+  borderColor,
+}: {
+  photoUrl?: string | null;
+  initials: string;
+  size: number;
+  color: string;
+  borderColor?: string;
+}) {
+  const fontSize = size * 0.45;
+  const borderRadius = size * 0.25;
+
+  return (
+    <View
+      style={[
+        styles.avatarBase,
+        {
+          width: size,
+          height: size,
+          borderRadius,
+          borderColor: borderColor || `${color}35`,
+          backgroundColor: `${color}18`,
+          overflow: "hidden",
+        },
+      ]}
+    >
+      {photoUrl ? (
+        <Image
+          source={{ uri: photoUrl }}
+          style={{ width: size, height: size }}
+          resizeMode="cover"
+        />
+      ) : (
+        <Text style={[styles.avatarText, { color, fontSize }]}>{initials}</Text>
+      )}
+    </View>
+  );
+}
+
 export default function MiClub() {
   const c = useTheme();
 
   const activeTeamId = useAuthStore((s: any) => s.activeTeamId);
-  const activeRole = useAuthStore((s: any) => s.activeRole);
   const clubId = useAuthStore((s: any) => s.activeClubId);
   const seasonLabel = useAuthStore((s: any) => s.activeSeasonName);
 
-  // ── STATE ─────────────────────────────────────────────────────────────────
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
   const [teams, setTeams] = useState<any[]>([]);
-  
-  // 🟢 MAGIA AQUÍ: Inicializamos directamente
-  const [selectedTeamId, setSelectedTeamId] = useState<number | null>(activeTeamId || null);
+  const [selectedTeamId, setSelectedTeamId] = useState<number | null>(
+    activeTeamId || null
+  );
 
-  // Modal estadísticas
   const [statsModal, setStatsModal] = useState(false);
   const [selectedPlayer, setSelectedPlayer] = useState<any>(null);
   const [playerStats, setPlayerStats] = useState<any>(null);
   const [loadingStats, setLoadingStats] = useState(false);
 
-  // ── CARGAR LISTA DE EQUIPOS ───────────────────────────────────────────────
+  // ── CARGAR EQUIPOS ───────────────────────────────────────────────────────
   useEffect(() => {
     async function loadTeams() {
       if (!clubId) {
         setLoading(false);
         return;
       }
-
       try {
         const res = await apiFetch(`/api/club/equipos/${clubId}`);
         if (res.ok) {
           const json = await res.json();
           setTeams(json);
-          // Fallback por si la id del Zustand no coincide (o es la primera vez)
           if (!selectedTeamId && json.length > 0) {
             setSelectedTeamId(json[0].id);
           }
-        } else {
-          setLoading(false);
         }
       } catch (e) {
         console.error("Error cargando equipos:", e);
+      } finally {
         setLoading(false);
       }
     }
     loadTeams();
-  }, [clubId]); // Quitamos dependencias extra para no resetear innecesariamente
+  }, [clubId]);
 
-  // ── CARGAR DETALLE DEL EQUIPO SELECCIONADO ────────────────────────────────
+  // ── CARGAR DETALLE ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!selectedTeamId || !seasonLabel) return;
     setLoading(true);
-    apiFetch(`/api/club/detalle/${selectedTeamId}?clubId=${clubId}&seasonLabel=${seasonLabel}`)
+    apiFetch(
+      `/api/club/detalle/${selectedTeamId}?clubId=${clubId}&seasonLabel=${seasonLabel}`
+    )
       .then((res) => (res.ok ? res.json() : null))
       .then((json) => setData(json))
       .catch(() => setData(null))
       .finally(() => setLoading(false));
   }, [selectedTeamId, seasonLabel]);
 
-  // ── ABRIR MODAL ESTADÍSTICAS ──────────────────────────────────────────────
+  // ── ESTADÍSTICAS ─────────────────────────────────────────────────────────
   const openStats = async (jugador: any) => {
     setSelectedPlayer(jugador);
     setPlayerStats(null);
@@ -100,7 +140,7 @@ export default function MiClub() {
     setLoadingStats(true);
     try {
       const res = await apiFetch(
-        `/api/club/jugador/${jugador.id}/stats?clubId=${clubId}&teamId=${selectedTeamId}&seasonLabel=${seasonLabel}`,
+        `/api/club/jugador/${jugador.id}/stats?clubId=${clubId}&teamId=${selectedTeamId}&seasonLabel=${seasonLabel}`
       );
       if (res.ok) setPlayerStats(await res.json());
     } catch {
@@ -113,13 +153,10 @@ export default function MiClub() {
   const copyCode = async (code: string) => {
     if (!code) return;
     await Clipboard.setStringAsync(code);
-    Alert.alert(
-      "¡Copiado!",
-      "El código de invitación se ha copiado al portapapeles.",
-    );
+    Alert.alert("¡Copiado!", "El código de invitación se ha copiado al portapapeles.");
   };
 
-  // ── GUARDS ────────────────────────────────────────────────────────────────
+  // ── GUARDS ───────────────────────────────────────────────────────────────
   if (loading && !data)
     return <ActivityIndicator style={{ flex: 1 }} color={c.boton} />;
 
@@ -149,386 +186,414 @@ export default function MiClub() {
 
   return (
     <ScreenContainer>
-    <View style={{ flex: 1, backgroundColor: c.fondo }}>
-      {/* ─── SELECTOR DE EQUIPO (TABS HORIZONTALES) ──────────────────────── */}
-      {teams.length > 0 && (
-        <View
-          style={[styles.selectorWrap, { borderBottomColor: c.bordeInput }]}
-        >
-          <Text style={[styles.selectorLabel, { color: c.subtexto }]}>
-            Equipo
-          </Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 8 }}
+      <View style={{ flex: 1, backgroundColor: c.fondo }}>
+        {/* ─── SELECTOR DE EQUIPO ────────────────────────────────────────── */}
+        {teams.length > 0 && (
+          <View
+            style={[
+              styles.selectorWrap,
+              { borderBottomColor: c.bordeInput },
+            ]}
           >
-            {teams.map((t: any) => {
-              const selected = selectedTeamId === t.id;
-              return (
-                <TouchableOpacity
-                  key={t.id}
-                  style={[
-                    styles.teamChip,
-                    {
-                      backgroundColor: selected ? c.boton : c.input,
-                      borderColor: selected ? c.boton : c.bordeInput,
-                    },
-                  ]}
-                  onPress={() => setSelectedTeamId(t.id)}
-                >
-                  <Text
-                    style={{
-                      color: selected ? "#fff" : c.texto,
-                      fontWeight: selected ? "bold" : "500",
-                      fontSize: 13,
-                    }}
+            <Text style={[styles.selectorLabel, { color: c.subtexto }]}>
+              Equipo
+            </Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 8 }}
+            >
+              {teams.map((t: any) => {
+                const selected = selectedTeamId === t.id;
+                return (
+                  <TouchableOpacity
+                    key={t.id}
+                    style={[
+                      styles.teamChip,
+                      {
+                        backgroundColor: selected ? c.boton : c.input,
+                        borderColor: selected ? c.boton : c.bordeInput,
+                      },
+                    ]}
+                    onPress={() => setSelectedTeamId(t.id)}
+                    accessibilityLabel={`Equipo ${t.category} ${t.suffix}`}
+                    accessibilityState={{ selected }}
                   >
-                    {t.category} {t.suffix}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-      )}
+                    <Text
+                      style={{
+                        color: selected ? "#fff" : c.texto,
+                        fontWeight: selected ? "bold" : "500",
+                        fontSize: 13,
+                      }}
+                    >
+                      {t.category} {t.suffix}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
 
-      <ScrollView
-        contentContainerStyle={styles.container}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* ─── HEADER DEL CLUB ─────────────────────────────────────────────── */}
-        <View style={styles.header}>
-          {data.logoUrl ? (
-            <Image source={{ uri: data.logoUrl }} style={styles.clubAvatar} />
-          ) : (
-            <View
+        <ScrollView
+          contentContainerStyle={styles.container}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* ─── HEADER DEL CLUB ─────────────────────────────────────────── */}
+          <View style={styles.header}>
+            <Avatar
+              photoUrl={data.logoUrl}
+              initials={data.nombre?.charAt(0) || "C"}
+              size={56}
+              color={c.boton}
+            />
+            <View style={styles.clubInfo}>
+              <Text style={[styles.clubNombre, { color: c.texto }]}>
+                {data.nombre}
+              </Text>
+              <Text style={[styles.clubMeta, { color: c.subtexto }]}>
+                {data.equipo} · {data.temporada}
+              </Text>
+            </View>
+          </View>
+
+          {/* Código de invitación */}
+          <View
+            style={[
+              styles.codigoCard,
+              { backgroundColor: c.input, borderColor: c.bordeInput },
+            ]}
+          >
+            <View>
+              <Text style={[styles.codigoLabel, { color: c.subtexto }]}>
+                CÓDIGO DE INVITACIÓN
+              </Text>
+              <Text style={[styles.codigoValue, { color: c.boton }]}>
+                {data.codigoInvitacion || "---"}
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => copyCode(data.codigoInvitacion)}
               style={[
-                styles.clubAvatar,
+                styles.copiarButton,
                 {
                   backgroundColor: `${c.boton}18`,
                   borderColor: `${c.boton}35`,
                 },
               ]}
             >
-              <Text style={[styles.clubAvatarText, { color: c.boton }]}>
-                {data.nombre?.charAt(0) || "C"}
+              <Text style={[styles.copiarText, { color: c.boton }]}>
+                📋 Copiar
               </Text>
-            </View>
-          )}
-          <View style={styles.clubInfo}>
-            <Text style={[styles.clubNombre, { color: c.texto }]}>
-              {data.nombre}
-            </Text>
-            <Text style={[styles.clubMeta, { color: c.subtexto }]}>
-              {data.equipo} · {data.temporada}
-            </Text>
+            </TouchableOpacity>
           </View>
-        </View>
 
-        {/* Código de invitación */}
-        <View
-          style={[
-            styles.codigoCard,
-            { backgroundColor: c.input, borderColor: c.bordeInput },
-          ]}
-        >
-          <View>
-            <Text style={[styles.codigoLabel, { color: c.subtexto }]}>
-              CÓDIGO DE INVITACIÓN
-            </Text>
-            <Text style={[styles.codigoValue, { color: c.boton }]}>
-              {data.codigoInvitacion || "---"}
-            </Text>
-          </View>
-          <TouchableOpacity
-            onPress={() => copyCode(data.codigoInvitacion)}
-            style={[
-              styles.copiarButton,
-              { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` },
-            ]}
-          >
-            <Text style={[styles.copiarText, { color: c.boton }]}>
-              📋 Copiar
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Chips */}
-        <View style={styles.chipsRow}>
-          {[
-            `🏷 ${data.categoria}`,
-            data.genero === "MALE"
-              ? "👦 Masculino"
-              : data.genero === "FEMALE"
+          {/* Chips */}
+          <View style={styles.chipsRow}>
+            {[
+              `🏷 ${data.categoria}`,
+              data.genero === "MALE"
+                ? "👦 Masculino"
+                : data.genero === "FEMALE"
                 ? "👧 Femenino"
                 : "👥 Mixto",
-            `👥 ${data.plantilla?.length || 0} jugadores`,
-          ].map((label) => (
-            <View
-              key={label}
-              style={[
-                styles.chip,
-                { backgroundColor: c.input, borderColor: c.bordeInput },
-              ]}
-            >
-              <Text style={[styles.chipText, { color: c.subtexto }]}>
-                {label}
-              </Text>
-            </View>
-          ))}
-        </View>
-
-        {/* ─── STAFF ──────────────────────────────────────────────────────── */}
-        <Text style={[styles.sectionTitle, { color: c.texto }]}>
-          🎽 Staff técnico
-        </Text>
-        {data.staff?.length > 0 ? (
-          <View style={styles.staffList}>
-            {data.staff.map((m: any) => (
+              `👥 ${data.plantilla?.length || 0} jugadores`,
+            ].map((label) => (
               <View
-                key={m.id}
+                key={label}
                 style={[
-                  styles.staffCard,
+                  styles.chip,
                   { backgroundColor: c.input, borderColor: c.bordeInput },
                 ]}
               >
-                <View
-                  style={[
-                    styles.staffAvatar,
-                    {
-                      backgroundColor: `${c.boton}18`,
-                      borderColor: `${c.boton}35`,
-                    },
-                  ]}
-                >
-                  <Text style={[styles.staffAvatarText, { color: c.boton }]}>
-                    {m.firstName?.charAt(0)}
-                  </Text>
-                </View>
-                <View style={styles.staffInfo}>
-                  <Text style={[styles.staffNombre, { color: c.texto }]}>
-                    {m.firstName} {m.lastName}
-                  </Text>
-                  {m.phone && (
-                    <Text style={[styles.staffPhone, { color: c.subtexto }]}>
-                      📞 {m.phone}
-                    </Text>
-                  )}
-                  {m.staffRole && (
-                    <Text style={[styles.staffPhone, { color: c.subtexto }]}>
-                      {m.staffRole}
-                    </Text>
-                  )}
-                </View>
+                <Text style={[styles.chipText, { color: c.subtexto }]}>
+                  {label}
+                </Text>
               </View>
             ))}
           </View>
-        ) : (
-          <Text style={[styles.emptyText, { color: c.subtexto }]}>
-            Sin staff registrado
-          </Text>
-        )}
 
-        {/* ─── PLANTILLA ──────────────────────────────────────────────────── */}
-        <Text style={[styles.sectionTitle, { color: c.texto, marginTop: 24 }]}>
-          ⚽ Plantilla
-        </Text>
-        {data.plantilla?.length > 0 ? (
-          <View style={styles.jugadoresList}>
-            {data.plantilla.map((j: any) => {
-              const posColor = POSICION_COLOR[j.position] || c.boton;
-              return (
-                <TouchableOpacity
-                  key={j.id}
+          {/* ─── STAFF ───────────────────────────────────────────────────── */}
+          <Text style={[styles.sectionTitle, { color: c.texto }]}>
+            🎽 Staff técnico
+          </Text>
+          {data.staff?.length > 0 ? (
+            <View style={styles.staffList}>
+              {data.staff.map((m: any) => (
+                <View
+                  key={m.id}
                   style={[
-                    styles.jugadorCard,
+                    styles.staffCard,
                     { backgroundColor: c.input, borderColor: c.bordeInput },
                   ]}
-                  onPress={() => openStats(j)}
-                  activeOpacity={0.8}
                 >
-                  <View
-                    style={[
-                      styles.jugadorAvatar,
-                      {
-                        backgroundColor: `${posColor}18`,
-                        borderColor: `${posColor}35`,
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[styles.jugadorAvatarText, { color: posColor }]}
-                    >
-                      {j.firstName?.charAt(0)}
+                  <Avatar
+                    photoUrl={m.photoUrl}
+                    initials={m.firstName?.charAt(0) || "?"}
+                    size={40}
+                    color={c.boton}
+                  />
+                  <View style={styles.staffInfo}>
+                    <Text style={[styles.staffNombre, { color: c.texto }]}>
+                      {m.firstName} {m.lastName}
                     </Text>
-                  </View>
-                  <View style={styles.jugadorInfo}>
-                    <Text style={[styles.jugadorNombre, { color: c.texto }]}>
-                      {j.firstName} {j.lastName}
-                    </Text>
-                    <View style={styles.jugadorMeta}>
-                      {j.birthDate && (
-                        <Text
-                          style={[
-                            styles.jugadorMetaText,
-                            { color: c.subtexto },
-                          ]}
-                        >
-                          🎂 {j.birthDate}
-                        </Text>
-                      )}
-                      {j.kitSize && (
-                        <Text
-                          style={[
-                            styles.jugadorMetaText,
-                            { color: c.subtexto },
-                          ]}
-                        >
-                          👕 {j.kitSize}
-                        </Text>
-                      )}
-                    </View>
-                    {j.docNumber && (
+                    {m.phone && (
                       <Text
-                        style={[
-                          styles.jugadorMetaText,
-                          { color: c.subtexto, marginTop: 2 },
-                        ]}
+                        style={[styles.staffPhone, { color: c.subtexto }]}
                       >
-                        🪪 {j.docType || "DOC"}: {j.docNumber}
+                        📞 {m.phone}
+                      </Text>
+                    )}
+                    {m.staffRole && (
+                      <Text
+                        style={[styles.staffPhone, { color: c.subtexto }]}
+                      >
+                        {m.staffRole}
                       </Text>
                     )}
                   </View>
-                  <View style={styles.jugadorDerecha}>
-                    <View
-                      style={[
-                        styles.dorsalBadge,
-                        {
-                          backgroundColor: `${posColor}18`,
-                          borderColor: `${posColor}35`,
-                        },
-                      ]}
-                    >
-                      <Text style={[styles.dorsalText, { color: posColor }]}>
-                        #{j.jerseyNumber || "?"}
-                      </Text>
-                    </View>
-                    <Text style={[styles.posicionText, { color: c.subtexto }]}>
-                      {POSICION_LABEL[j.position] || "Jugador"}
-                    </Text>
-                    <Text style={[styles.statsHint, { color: c.boton }]}>
-                      📊 Stats
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        ) : (
-          <Text style={[styles.emptyText, { color: c.subtexto }]}>
-            Sin jugadores registrados
-          </Text>
-        )}
-      </ScrollView>
-
-      {/* ─── MODAL ESTADÍSTICAS DEL JUGADOR ──────────────────────────────── */}
-      <Modal
-        visible={statsModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setStatsModal(false)}
-      >
-        <Pressable style={styles.overlay} onPress={() => setStatsModal(false)}>
-          <Pressable
-            style={[
-              styles.statsCard,
-              { backgroundColor: c.fondo, borderColor: c.bordeInput },
-            ]}
-            onPress={() => {}}
-          >
-            {/* Header */}
-            <View style={styles.statsHeader}>
-              <View>
-                <Text style={[styles.statsNombre, { color: c.texto }]}>
-                  {selectedPlayer?.firstName} {selectedPlayer?.lastName}
-                </Text>
-                <Text style={[styles.statsPos, { color: c.subtexto }]}>
-                  {POSICION_LABEL[selectedPlayer?.position] || "Jugador"} · #
-                  {selectedPlayer?.jerseyNumber || "?"}
-                </Text>
-              </View>
-              <TouchableOpacity onPress={() => setStatsModal(false)}>
-                <Text style={{ color: c.subtexto, fontSize: 20 }}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            {loadingStats ? (
-              <ActivityIndicator
-                color={c.boton}
-                style={{ marginTop: 30, marginBottom: 30 }}
-              />
-            ) : playerStats ? (
-              <>
-                <Text style={[styles.statsTemporada, { color: c.subtexto }]}>
-                  Temporada {seasonLabel}
-                </Text>
-
-                {/* Grid de estadísticas */}
-                <View style={styles.statsGrid}>
-                  {[
-                    { label: "⚽ Goles", value: playerStats.totalGoles },
-                    {
-                      label: "🅰️ Asistencias",
-                      value: playerStats.totalAsistencias,
-                    },
-                    {
-                      label: "🏆 Partidos gan.",
-                      value: playerStats.partidosGanados,
-                    },
-                    { label: "🎮 Partidos", value: playerStats.totalPartidos },
-                    {
-                      label: "🟨 T. Amarillas",
-                      value: playerStats.totalTarjetasAmarillas,
-                    },
-                    {
-                      label: "🟥 T. Rojas",
-                      value: playerStats.totalTarjetasRojas,
-                    },
-                  ].map((stat) => (
-                    <View
-                      key={stat.label}
-                      style={[styles.statBox, { backgroundColor: c.input }]}
-                    >
-                      <Text style={[styles.statValue, { color: c.texto }]}>
-                        {stat.value ?? 0}
-                      </Text>
-                      <Text style={[styles.statLabel, { color: c.subtexto }]}>
-                        {stat.label}
-                      </Text>
-                    </View>
-                  ))}
                 </View>
-              </>
-            ) : (
-              <Text
-                style={[
-                  styles.emptySub,
-                  { color: c.subtexto, textAlign: "center", marginTop: 20 },
-                ]}
-              >
-                No hay estadísticas disponibles para esta temporada.
-              </Text>
-            )}
+              ))}
+            </View>
+          ) : (
+            <Text style={[styles.emptyText, { color: c.subtexto }]}>
+              Sin staff registrado
+            </Text>
+          )}
+
+          {/* ─── PLANTILLA ─────────────────────────────────────────────────── */}
+          <Text
+            style={[styles.sectionTitle, { color: c.texto, marginTop: 24 }]}
+          >
+            ⚽ Plantilla
+          </Text>
+          {data.plantilla?.length > 0 ? (
+            <View style={styles.jugadoresList}>
+              {data.plantilla.map((j: any) => {
+                const posColor = POSICION_COLOR[j.position] || c.boton;
+                return (
+                  <TouchableOpacity
+                    key={j.id}
+                    style={[
+                      styles.jugadorCard,
+                      {
+                        backgroundColor: c.input,
+                        borderColor: c.bordeInput,
+                      },
+                    ]}
+                    onPress={() => openStats(j)}
+                    activeOpacity={0.8}
+                    accessibilityLabel={`${j.firstName} ${j.lastName}, ${POSICION_LABEL[j.position] || "Jugador"}`}
+                  >
+                    <Avatar
+                      photoUrl={j.photoUrl}
+                      initials={j.firstName?.charAt(0) || "?"}
+                      size={44}
+                      color={posColor}
+                    />
+                    <View style={styles.jugadorInfo}>
+                      <Text
+                        style={[styles.jugadorNombre, { color: c.texto }]}
+                      >
+                        {j.firstName} {j.lastName}
+                      </Text>
+                      <View style={styles.jugadorMeta}>
+                        {j.birthDate && (
+                          <Text
+                            style={[
+                              styles.jugadorMetaText,
+                              { color: c.subtexto },
+                            ]}
+                          >
+                            🎂 {j.birthDate}
+                          </Text>
+                        )}
+                        {j.kitSize && (
+                          <Text
+                            style={[
+                              styles.jugadorMetaText,
+                              { color: c.subtexto },
+                            ]}
+                          >
+                            👕 {j.kitSize}
+                          </Text>
+                        )}
+                      </View>
+                      {j.docNumber && (
+                        <Text
+                          style={[
+                            styles.jugadorMetaText,
+                            { color: c.subtexto, marginTop: 2 },
+                          ]}
+                        >
+                          🪪 {j.docType || "DOC"}: {j.docNumber}
+                        </Text>
+                      )}
+                    </View>
+                    <View style={styles.jugadorDerecha}>
+                      <View
+                        style={[
+                          styles.dorsalBadge,
+                          {
+                            backgroundColor: `${posColor}18`,
+                            borderColor: `${posColor}35`,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[styles.dorsalText, { color: posColor }]}
+                        >
+                          #{j.jerseyNumber || "?"}
+                        </Text>
+                      </View>
+                      <Text
+                        style={[
+                          styles.posicionText,
+                          { color: c.subtexto },
+                        ]}
+                      >
+                        {POSICION_LABEL[j.position] || "Jugador"}
+                      </Text>
+                      <Text
+                        style={[styles.statsHint, { color: c.boton }]}
+                      >
+                        📊 Stats
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ) : (
+            <Text style={[styles.emptyText, { color: c.subtexto }]}>
+              Sin jugadores registrados
+            </Text>
+          )}
+        </ScrollView>
+
+        {/* ─── MODAL ESTADÍSTICAS ────────────────────────────────────────── */}
+        <Modal
+          visible={statsModal}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setStatsModal(false)}
+        >
+          <Pressable
+            style={styles.overlay}
+            onPress={() => setStatsModal(false)}
+          >
+            <Pressable
+              style={[
+                styles.statsCard,
+                { backgroundColor: c.fondo, borderColor: c.bordeInput },
+              ]}
+              onPress={() => {}}
+            >
+              <View style={styles.statsHeader}>
+                <View>
+                  <Text style={[styles.statsNombre, { color: c.texto }]}>
+                    {selectedPlayer?.firstName} {selectedPlayer?.lastName}
+                  </Text>
+                  <Text style={[styles.statsPos, { color: c.subtexto }]}>
+                    {POSICION_LABEL[selectedPlayer?.position] || "Jugador"} ·
+                    #{selectedPlayer?.jerseyNumber || "?"}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => setStatsModal(false)}>
+                  <Text style={{ color: c.subtexto, fontSize: 20 }}>✕</Text>
+                </TouchableOpacity>
+              </View>
+
+              {loadingStats ? (
+                <ActivityIndicator
+                  color={c.boton}
+                  style={{ marginVertical: 30 }}
+                />
+              ) : playerStats ? (
+                <>
+                  <Text
+                    style={[
+                      styles.statsTemporada,
+                      { color: c.subtexto },
+                    ]}
+                  >
+                    Temporada {seasonLabel}
+                  </Text>
+                  <View style={styles.statsGrid}>
+                    {[
+                      { label: "⚽ Goles", value: playerStats.totalGoles },
+                      {
+                        label: "🅰️ Asistencias",
+                        value: playerStats.totalAsistencias,
+                      },
+                      {
+                        label: "🏆 Partidos gan.",
+                        value: playerStats.partidosGanados,
+                      },
+                      {
+                        label: "🎮 Partidos",
+                        value: playerStats.totalPartidos,
+                      },
+                      {
+                        label: "🟨 T. Amarillas",
+                        value: playerStats.totalTarjetasAmarillas,
+                      },
+                      {
+                        label: "🟥 T. Rojas",
+                        value: playerStats.totalTarjetasRojas,
+                      },
+                    ].map((stat) => (
+                      <View
+                        key={stat.label}
+                        style={[
+                          styles.statBox,
+                          { backgroundColor: c.input },
+                        ]}
+                      >
+                        <Text
+                          style={[styles.statValue, { color: c.texto }]}
+                        >
+                          {stat.value ?? 0}
+                        </Text>
+                        <Text
+                          style={[styles.statLabel, { color: c.subtexto }]}
+                        >
+                          {stat.label}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                </>
+              ) : (
+                <Text
+                  style={[
+                    styles.emptySub,
+                    {
+                      color: c.subtexto,
+                      textAlign: "center",
+                      marginTop: 20,
+                    },
+                  ]}
+                >
+                  No hay estadísticas disponibles para esta temporada.
+                </Text>
+              )}
+            </Pressable>
           </Pressable>
-        </Pressable>
-      </Modal>
-    </View>
+        </Modal>
+      </View>
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
+  avatarBase: {
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarText: { fontWeight: "bold" },
+
   selectorWrap: {
     paddingTop: 60,
     paddingBottom: 15,
@@ -557,15 +622,6 @@ const styles = StyleSheet.create({
     gap: 14,
     marginBottom: 16,
   },
-  clubAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  clubAvatarText: { fontSize: 24, fontWeight: "bold" },
   clubInfo: { flex: 1 },
   clubNombre: { fontSize: 22, fontWeight: "bold", marginBottom: 2 },
   clubMeta: { fontSize: 13 },
@@ -621,15 +677,6 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 12,
   },
-  staffAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  staffAvatarText: { fontSize: 16, fontWeight: "bold" },
   staffInfo: { flex: 1, gap: 3 },
   staffNombre: { fontSize: 14, fontWeight: "600" },
   staffPhone: { fontSize: 12, opacity: 0.8 },
@@ -643,15 +690,6 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 12,
   },
-  jugadorAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  jugadorAvatarText: { fontSize: 18, fontWeight: "bold" },
   jugadorInfo: { flex: 1, gap: 2 },
   jugadorNombre: { fontSize: 14, fontWeight: "600", marginBottom: 2 },
   jugadorMeta: { flexDirection: "row", gap: 10 },
@@ -683,7 +721,6 @@ const styles = StyleSheet.create({
   },
   emptySub: { fontSize: 14, textAlign: "center", lineHeight: 20 },
 
-  // Stats modal
   overlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.6)",

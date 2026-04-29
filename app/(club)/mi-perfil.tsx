@@ -1,23 +1,103 @@
+import * as ImageManipulator from 'expo-image-manipulator'
+import * as ImagePicker from 'expo-image-picker'
 import { router } from 'expo-router'
-import { ScrollView, View, Text, TouchableOpacity, StyleSheet } from 'react-native'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useTheme } from '../../lib/useTheme'
-import { useAuthStore } from '../../lib/store'
-import i18n from '../../lib/i18n'
+import { ActivityIndicator, Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import ScreenContainer from '../../components/ScreenContainer'
+import i18n from '../../lib/i18n'
+import { useAuthStore } from '../../lib/store'
+import { useTheme } from '../../lib/useTheme'
+
+const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://squadraapi.onrender.com'
+
+async function pickAndCompressImage(): Promise<string | null> {
+  const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
+  if (status !== 'granted') {
+    alert('Se necesitan permisos para acceder a la galería')
+    return null
+  }
+
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ['images'],
+    allowsEditing: true,
+    aspect: [1, 1],
+    quality: 0.8,
+  })
+
+  if (result.canceled || !result.assets?.length) return null
+
+  const manipulated = await ImageManipulator.manipulateAsync(
+    result.assets[0].uri,
+    [{ resize: { width: 512, height: 512 } }],
+    { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+  )
+
+  return manipulated.uri
+}
+
+async function uploadProfilePhoto(uri: string, token: string): Promise<string> {
+  const formData = new FormData()
+
+  if (Platform.OS === 'web') {
+    const response = await fetch(uri)
+    const blob = await response.blob()
+    formData.append('file', blob, 'avatar.jpg')
+  } else {
+    formData.append('file', {
+      uri,
+      name: 'avatar.jpg',
+      type: 'image/jpeg',
+    } as any)
+  }
+
+  const res = await fetch(`${API_URL}/api/profile/photo`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+    body: formData,
+  })
+
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(err || 'Error subiendo foto')
+  }
+
+  const data = await res.json()
+  return data.photoUrl as string
+}
 
 export default function MiPerfil() {
   const c = useTheme()
   const { t } = useTranslation()
   const profile = useAuthStore((s: any) => s.profile)
+  const setProfile = useAuthStore((s: any) => s.setProfile)
+  const token = useAuthStore((s: any) => s.token)
   const themeMode = useAuthStore((s: any) => s.themeMode)
   const language = useAuthStore((s: any) => s.language)
   const setThemeMode = useAuthStore((s: any) => s.setThemeMode)
   const setLanguage = useAuthStore((s: any) => s.setLanguage)
+  const [uploading, setUploading] = useState(false)
 
   const handleLanguage = (lang: 'es' | 'en') => {
     setLanguage(lang)
     i18n.changeLanguage(lang)
+  }
+
+  const handleChangePhoto = async () => {
+    const uri = await pickAndCompressImage()
+    if (!uri || !token) return
+
+    try {
+      setUploading(true)
+      const newUrl = await uploadProfilePhoto(uri, token)
+      setProfile({ ...profile, photoUrl: newUrl })
+    } catch (e: any) {
+      alert('Error: ' + e.message)
+    } finally {
+      setUploading(false)
+    }
   }
 
   const fullName = [profile?.firstName, profile?.lastName].filter(Boolean).join(" ") || "Usuario"
@@ -32,9 +112,32 @@ export default function MiPerfil() {
 
         {/* Avatar y nombre */}
         <View style={styles.avatarWrapper}>
-          <View style={[styles.avatar, { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` }]}>
-            <Text style={[styles.avatarText, { color: c.boton }]}>{initials}</Text>
-          </View>
+          <TouchableOpacity
+            onPress={handleChangePhoto}
+            disabled={uploading}
+            activeOpacity={0.8}
+            style={[styles.avatar, { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` }]}
+          >
+            {profile?.photoUrl ? (
+              <Image
+                source={{ uri: profile.photoUrl }}
+                style={[styles.avatar, { borderRadius: 20 }]}
+              />
+            ) : (
+              <Text style={[styles.avatarText, { color: c.boton }]}>{initials}</Text>
+            )}
+
+            {uploading && (
+              <View style={[styles.overlay, { borderRadius: 20 }]}>
+                <ActivityIndicator color={c.boton} />
+              </View>
+            )}
+
+            <View style={[styles.editBadge, { backgroundColor: c.boton, borderColor: c.fondo }]}>
+              <Text style={{ color: '#fff', fontSize: 12 }}>✎</Text>
+            </View>
+          </TouchableOpacity>
+
           <Text style={[styles.nombre, { color: c.texto }]}>{fullName}</Text>
           <Text style={[styles.email, { color: c.subtexto }]}>{profile?.email}</Text>
         </View>
@@ -178,4 +281,21 @@ const styles = StyleSheet.create({
   accionBtn: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   accionTitle: { fontSize: 15, fontWeight: '700' },
   accionSub: { fontSize: 12, marginTop: 1 },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editBadge: {
+    position: 'absolute',
+    bottom: -4,
+    right: -4,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+  },
 })

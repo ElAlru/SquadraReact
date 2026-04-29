@@ -1,24 +1,22 @@
+import { useRouter } from 'expo-router'
 import { Drawer } from 'expo-router/drawer'
 import { useTranslation } from 'react-i18next'
-import { Alert, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
-import { useTheme } from '../../lib/useTheme'
+import { Alert, Image, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import WebNavBar from '../../components/WebNavBar'
 import { useAuthStore } from '../../lib/store'
 import { supabase } from '../../lib/supabase'
-import { useRouter } from 'expo-router'
-import WebNavBar from '../../components/WebNavBar'
+import { useTheme } from '../../lib/useTheme'
 
 function DrawerContent({ navigation }: { navigation: any }) {
   const c = useTheme()
   const { t } = useTranslation()
   const router = useRouter()
 
-  // 🟢 DATOS REALES DESDE EL STORE (Cargamos el profile del backend)
   const profile = useAuthStore((state: any) => state.profile)
   const clubName = useAuthStore((state: any) => state.activeClubName || 'Mi Club')
   const activeRole = useAuthStore((state: any) => state.activeRole)
   const logout = useAuthStore((state: any) => state.logout)
 
-  // Lógica de permisos basada en el rol activo
   const esCoach = activeRole === 'COACH' || activeRole === 'PRESIDENT'
   const esPresidente = activeRole === 'PRESIDENT'
 
@@ -50,13 +48,16 @@ function DrawerContent({ navigation }: { navigation: any }) {
   return (
     <View style={[styles.drawerContainer, { backgroundColor: c.fondo }]}>
 
-      {/* Header Dinámico con los datos del perfil guardado en el Store */}
+      {/* Header del Drawer con foto de perfil */}
       <View style={[styles.drawerHeader, { borderBottomColor: c.bordeInput }]}>
         <View style={[styles.drawerAvatar, { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` }]}>
-          <Text style={[styles.drawerAvatarText, { color: c.boton }]}>
-            {/* Usamos firstName con F mayúscula según tu interface UserProfile */}
-            {profile?.firstName?.charAt(0) || 'U'}
-          </Text>
+          {profile?.photoUrl ? (
+            <Image source={{ uri: profile.photoUrl }} style={styles.drawerAvatarImage} />
+          ) : (
+            <Text style={[styles.drawerAvatarText, { color: c.boton }]}>
+              {profile?.firstName?.charAt(0) || 'U'}
+            </Text>
+          )}
         </View>
         <View style={styles.drawerUserInfo}>
           <Text style={[styles.drawerUserName, { color: c.texto }]}>
@@ -86,7 +87,7 @@ function DrawerContent({ navigation }: { navigation: any }) {
         ))}
       </View>
 
-      {/* Items por rol (Gestión) */}
+      {/* Items por rol */}
       {ITEMS_ROL.length > 0 && (
         <>
           <View style={[styles.drawerDivider, { borderTopColor: c.bordeInput }]}>
@@ -206,9 +207,13 @@ export default function ClubLayout() {
             onPress={() => navigation.navigate('mi-perfil')}
           >
             <View style={[styles.avatarHeaderCircle, { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` }]}>
-              <Text style={[styles.avatarHeaderText, { color: c.boton }]}>
-                {profile?.firstName?.charAt(0)?.toUpperCase() || 'U'}
-              </Text>
+              {profile?.photoUrl ? (
+                <Image source={{ uri: profile.photoUrl }} style={styles.avatarHeaderImage} />
+              ) : (
+                <Text style={[styles.avatarHeaderText, { color: c.boton }]}>
+                  {profile?.firstName?.charAt(0)?.toUpperCase() || 'U'}
+                </Text>
+              )}
             </View>
           </TouchableOpacity>
         ),
@@ -253,6 +258,12 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  drawerAvatarImage: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
   },
   drawerAvatarText: {
     fontSize: 22,
@@ -345,6 +356,12 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarHeaderImage: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
   },
   avatarHeaderText: {
     fontSize: 15,
