@@ -15,6 +15,7 @@ import {
 import ScreenContainer from "../../components/ScreenContainer";
 import { apiFetch } from "../../lib/api";
 import { useAuthStore } from "../../lib/store";
+import { usePermissions } from "../../lib/usePermissions";
 import { useTheme } from "../../lib/useTheme";
 
 const POSICION_LABEL: Record<string, string> = {
@@ -82,12 +83,18 @@ export default function MiClub() {
   const clubId = useAuthStore((s: any) => s.activeClubId);
   const seasonLabel = useAuthStore((s: any) => s.activeSeasonName);
 
+  const { canSeeInvitationCode, canOpenMemberDetail } = usePermissions();
+
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
   const [teams, setTeams] = useState<any[]>([]);
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(
     activeTeamId || null
   );
+
+  const [detailModal, setDetailModal] = useState(false);
+  const [detailPerson, setDetailPerson] = useState<any>(null);
+  const [detailIsStaff, setDetailIsStaff] = useState(false);
 
   const [statsModal, setStatsModal] = useState(false);
   const [selectedPlayer, setSelectedPlayer] = useState<any>(null);
@@ -131,6 +138,15 @@ export default function MiClub() {
       .catch(() => setData(null))
       .finally(() => setLoading(false));
   }, [selectedTeamId, seasonLabel]);
+
+  // ── FICHA DETALLE (solo presidente / entrenador) ──────────────────────────
+  const openDetail = (person: any, isStaff = false) => {
+    setDetailPerson(person);
+    setDetailIsStaff(isStaff);
+    setDetailModal(true);
+  };
+
+  const closeDetail = () => setDetailModal(false);
 
   // ── ESTADÍSTICAS ─────────────────────────────────────────────────────────
   const openStats = async (jugador: any) => {
@@ -257,36 +273,38 @@ export default function MiClub() {
             </View>
           </View>
 
-          {/* Código de invitación */}
-          <View
-            style={[
-              styles.codigoCard,
-              { backgroundColor: c.input, borderColor: c.bordeInput },
-            ]}
-          >
-            <View>
-              <Text style={[styles.codigoLabel, { color: c.subtexto }]}>
-                CÓDIGO DE INVITACIÓN
-              </Text>
-              <Text style={[styles.codigoValue, { color: c.boton }]}>
-                {data.codigoInvitacion || "---"}
-              </Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => copyCode(data.codigoInvitacion)}
+          {/* Código de invitación — solo presidente y staff */}
+          {canSeeInvitationCode && (
+            <View
               style={[
-                styles.copiarButton,
-                {
-                  backgroundColor: `${c.boton}18`,
-                  borderColor: `${c.boton}35`,
-                },
+                styles.codigoCard,
+                { backgroundColor: c.input, borderColor: c.bordeInput },
               ]}
             >
-              <Text style={[styles.copiarText, { color: c.boton }]}>
-                📋 Copiar
-              </Text>
-            </TouchableOpacity>
-          </View>
+              <View>
+                <Text style={[styles.codigoLabel, { color: c.subtexto }]}>
+                  CÓDIGO DE INVITACIÓN
+                </Text>
+                <Text style={[styles.codigoValue, { color: c.boton }]}>
+                  {data.codigoInvitacion || "---"}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => copyCode(data.codigoInvitacion)}
+                style={[
+                  styles.copiarButton,
+                  {
+                    backgroundColor: `${c.boton}18`,
+                    borderColor: `${c.boton}35`,
+                  },
+                ]}
+              >
+                <Text style={[styles.copiarText, { color: c.boton }]}>
+                  📋 Copiar
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Chips */}
           <View style={styles.chipsRow}>
@@ -320,12 +338,14 @@ export default function MiClub() {
           {data.staff?.length > 0 ? (
             <View style={styles.staffList}>
               {data.staff.map((m: any) => (
-                <View
+                <TouchableOpacity
                   key={m.id}
                   style={[
                     styles.staffCard,
                     { backgroundColor: c.input, borderColor: c.bordeInput },
                   ]}
+                  onPress={canOpenMemberDetail ? () => openDetail(m, true) : undefined}
+                  activeOpacity={canOpenMemberDetail ? 0.8 : 1}
                 >
                   <Avatar
                     photoUrl={m.photoUrl}
@@ -338,21 +358,20 @@ export default function MiClub() {
                       {m.firstName} {m.lastName}
                     </Text>
                     {m.phone && (
-                      <Text
-                        style={[styles.staffPhone, { color: c.subtexto }]}
-                      >
+                      <Text style={[styles.staffPhone, { color: c.subtexto }]}>
                         📞 {m.phone}
                       </Text>
                     )}
                     {m.staffRole && (
-                      <Text
-                        style={[styles.staffPhone, { color: c.subtexto }]}
-                      >
+                      <Text style={[styles.staffPhone, { color: c.subtexto }]}>
                         {m.staffRole}
                       </Text>
                     )}
                   </View>
-                </View>
+                  {canOpenMemberDetail && (
+                    <Text style={{ color: c.subtexto, fontSize: 18 }}>›</Text>
+                  )}
+                </TouchableOpacity>
               ))}
             </View>
           ) : (
@@ -381,8 +400,8 @@ export default function MiClub() {
                         borderColor: c.bordeInput,
                       },
                     ]}
-                    onPress={() => openStats(j)}
-                    activeOpacity={0.8}
+                    onPress={canOpenMemberDetail ? () => openDetail(j, false) : undefined}
+                    activeOpacity={canOpenMemberDetail ? 0.8 : 1}
                     accessibilityLabel={`${j.firstName} ${j.lastName}, ${POSICION_LABEL[j.position] || "Jugador"}`}
                   >
                     <Avatar
@@ -454,11 +473,11 @@ export default function MiClub() {
                       >
                         {POSICION_LABEL[j.position] || "Jugador"}
                       </Text>
-                      <Text
-                        style={[styles.statsHint, { color: c.boton }]}
-                      >
-                        📊 Stats
-                      </Text>
+                      {canOpenMemberDetail && (
+                        <Text style={[styles.statsHint, { color: c.boton }]}>
+                          ⋯
+                        </Text>
+                      )}
                     </View>
                   </TouchableOpacity>
                 );
@@ -470,6 +489,169 @@ export default function MiClub() {
             </Text>
           )}
         </ScrollView>
+
+        {/* ─── FICHA DETALLE (centrada, presidente / entrenador) ─────────── */}
+        <Modal
+          visible={detailModal}
+          transparent
+          animationType="fade"
+          onRequestClose={closeDetail}
+        >
+          <Pressable style={styles.overlayCenter} onPress={closeDetail}>
+            <Pressable
+              style={[
+                styles.detailCard,
+                { backgroundColor: c.fondo, borderColor: c.bordeInput },
+              ]}
+              onPress={() => {}}
+            >
+              {/* Botón cerrar */}
+              <TouchableOpacity style={styles.detailClose} onPress={closeDetail}>
+                <Text style={{ color: c.subtexto, fontSize: 18, fontWeight: "600" }}>
+                  ✕
+                </Text>
+              </TouchableOpacity>
+
+              {/* Avatar grande */}
+              <View style={styles.detailAvatarWrap}>
+                <Avatar
+                  photoUrl={detailPerson?.photoUrl}
+                  initials={detailPerson?.firstName?.charAt(0) || "?"}
+                  size={72}
+                  color={
+                    detailIsStaff
+                      ? c.boton
+                      : POSICION_COLOR[detailPerson?.position] || c.boton
+                  }
+                />
+              </View>
+
+              {/* Nombre */}
+              <Text style={[styles.detailNombre, { color: c.texto }]}>
+                {detailPerson?.firstName} {detailPerson?.lastName}
+              </Text>
+
+              {/* Chip de rol / posición */}
+              {detailIsStaff ? (
+                detailPerson?.staffRole ? (
+                  <View
+                    style={[
+                      styles.detailRolChip,
+                      { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` },
+                    ]}
+                  >
+                    <Text style={[styles.detailRolText, { color: c.boton }]}>
+                      {detailPerson.staffRole}
+                    </Text>
+                  </View>
+                ) : null
+              ) : (
+                <View
+                  style={[
+                    styles.detailRolChip,
+                    {
+                      backgroundColor: `${POSICION_COLOR[detailPerson?.position] || c.boton}18`,
+                      borderColor: `${POSICION_COLOR[detailPerson?.position] || c.boton}35`,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.detailRolText,
+                      { color: POSICION_COLOR[detailPerson?.position] || c.boton },
+                    ]}
+                  >
+                    {POSICION_LABEL[detailPerson?.position] || "Jugador"}
+                    {detailPerson?.jerseyNumber ? `  ·  #${detailPerson.jerseyNumber}` : ""}
+                  </Text>
+                </View>
+              )}
+
+              {/* Separador */}
+              <View style={[styles.detailDivider, { backgroundColor: c.bordeInput }]} />
+
+              {/* Datos */}
+              <View style={styles.detailRows}>
+                {detailIsStaff ? (
+                  <>
+                    {detailPerson?.email && (
+                      <View style={styles.detailRow}>
+                        <Text style={[styles.detailRowLabel, { color: c.subtexto }]}>✉️ Email</Text>
+                        <Text style={[styles.detailRowValue, { color: c.texto }]}>{detailPerson.email}</Text>
+                      </View>
+                    )}
+                    {detailPerson?.phone && (
+                      <View style={styles.detailRow}>
+                        <Text style={[styles.detailRowLabel, { color: c.subtexto }]}>📞 Teléfono</Text>
+                        <Text style={[styles.detailRowValue, { color: c.texto }]}>{detailPerson.phone}</Text>
+                      </View>
+                    )}
+                    {detailPerson?.docNumber && (
+                      <View style={styles.detailRow}>
+                        <Text style={[styles.detailRowLabel, { color: c.subtexto }]}>
+                          🪪 {detailPerson.docType || "DOC"}
+                        </Text>
+                        <Text style={[styles.detailRowValue, { color: c.texto }]}>{detailPerson.docNumber}</Text>
+                      </View>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {detailPerson?.birthDate && (
+                      <View style={styles.detailRow}>
+                        <Text style={[styles.detailRowLabel, { color: c.subtexto }]}>🎂 Nacimiento</Text>
+                        <Text style={[styles.detailRowValue, { color: c.texto }]}>{detailPerson.birthDate}</Text>
+                      </View>
+                    )}
+                    {detailPerson?.email && (
+                      <View style={styles.detailRow}>
+                        <Text style={[styles.detailRowLabel, { color: c.subtexto }]}>✉️ Email</Text>
+                        <Text style={[styles.detailRowValue, { color: c.texto }]}>{detailPerson.email}</Text>
+                      </View>
+                    )}
+                    {detailPerson?.phone && (
+                      <View style={styles.detailRow}>
+                        <Text style={[styles.detailRowLabel, { color: c.subtexto }]}>📞 Teléfono</Text>
+                        <Text style={[styles.detailRowValue, { color: c.texto }]}>{detailPerson.phone}</Text>
+                      </View>
+                    )}
+                    {detailPerson?.kitSize && (
+                      <View style={styles.detailRow}>
+                        <Text style={[styles.detailRowLabel, { color: c.subtexto }]}>👕 Talla</Text>
+                        <Text style={[styles.detailRowValue, { color: c.texto }]}>{detailPerson.kitSize}</Text>
+                      </View>
+                    )}
+                    {detailPerson?.docNumber && (
+                      <View style={styles.detailRow}>
+                        <Text style={[styles.detailRowLabel, { color: c.subtexto }]}>
+                          🪪 {detailPerson.docType || "DOC"}
+                        </Text>
+                        <Text style={[styles.detailRowValue, { color: c.texto }]}>{detailPerson.docNumber}</Text>
+                      </View>
+                    )}
+                  </>
+                )}
+              </View>
+
+              {/* Botón estadísticas — solo jugadores */}
+              {!detailIsStaff && (
+                <TouchableOpacity
+                  style={[
+                    styles.detailStatsBtn,
+                    { backgroundColor: c.boton },
+                  ]}
+                  onPress={() => {
+                    closeDetail();
+                    openStats(detailPerson);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.detailStatsBtnText}>📊 Ver estadísticas</Text>
+                </TouchableOpacity>
+              )}
+            </Pressable>
+          </Pressable>
+        </Modal>
 
         {/* ─── MODAL ESTADÍSTICAS ────────────────────────────────────────── */}
         <Modal
@@ -726,6 +908,54 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.6)",
     justifyContent: "flex-end",
   },
+  overlayCenter: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 28,
+  },
+
+  detailCard: {
+    width: "100%",
+    borderRadius: 22,
+    borderWidth: 1,
+    padding: 24,
+    alignItems: "center",
+  },
+  detailClose: {
+    position: "absolute",
+    top: 16,
+    right: 16,
+    padding: 4,
+  },
+  detailAvatarWrap: { marginBottom: 14, marginTop: 4 },
+  detailNombre: { fontSize: 20, fontWeight: "800", textAlign: "center", marginBottom: 8 },
+  detailRolChip: {
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    marginBottom: 18,
+  },
+  detailRolText: { fontSize: 13, fontWeight: "600" },
+  detailDivider: { width: "100%", height: 1, marginBottom: 16 },
+  detailRows: { width: "100%", gap: 10, marginBottom: 20 },
+  detailRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  detailRowLabel: { fontSize: 13 },
+  detailRowValue: { fontSize: 13, fontWeight: "600", textAlign: "right", flexShrink: 1, marginLeft: 12 },
+  detailStatsBtn: {
+    width: "100%",
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  detailStatsBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+
   statsCard: {
     borderTopLeftRadius: 25,
     borderTopRightRadius: 25,

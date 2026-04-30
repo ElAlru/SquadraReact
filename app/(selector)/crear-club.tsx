@@ -1,7 +1,8 @@
 import { router } from 'expo-router'
 import { useState } from 'react'
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { apiFetch } from '../../lib/api'
+import { parseApiError } from '../../lib/helper'
 import { useAuthStore } from '../../lib/store'
 import { useTheme } from '../../lib/useTheme'
 import ScreenContainer from '../../components/ScreenContainer'
@@ -15,9 +16,11 @@ export default function CrearClub() {
   const [created, setCreated] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [clubData, setClubData] = useState<any>(null)
+  const [errorMessage, setErrorMessage] = useState('')
 
   const handleCrearClub = async () => {
     if (!nombre.trim()) return
+    setErrorMessage('')
     setIsSubmitting(true)
     try {
       const res = await apiFetch('/api/clubs', {
@@ -33,10 +36,15 @@ export default function CrearClub() {
         setCreated(true)
       } else {
         const errorText = await res.text()
-        Alert.alert("Error", errorText || "No se pudo crear el club")
+        try {
+          const data = JSON.parse(errorText)
+          setErrorMessage(parseApiError(data.error || data.message, 'No se pudo crear el club.'))
+        } catch {
+          setErrorMessage(parseApiError(errorText, 'No se pudo crear el club.'))
+        }
       }
-    } catch (e) {
-      Alert.alert("Error", "No se pudo crear el club")
+    } catch {
+      setErrorMessage('Problema de conexión con el servidor.')
     } finally {
       setIsSubmitting(false)
     }
@@ -93,7 +101,11 @@ export default function CrearClub() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Text style={[styles.title, { color: c.texto, marginTop: 40 }]}>Nuevo club</Text>
+          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+            <Text style={[styles.backText, { color: c.boton }]}>← Volver</Text>
+          </TouchableOpacity>
+
+          <Text style={[styles.title, { color: c.texto }]}>Nuevo club</Text>
 
           <Text style={[styles.label, { color: c.subtexto }]}>Nombre del club *</Text>
           <TextInput
@@ -122,6 +134,12 @@ export default function CrearClub() {
             onSubmitEditing={handleCrearClub}
           />
 
+          {errorMessage !== '' && (
+            <View style={[styles.errorBanner, { backgroundColor: `${c.error}15`, borderColor: c.error }]}>
+              <Text style={{ color: c.error, fontSize: 13, fontWeight: '500' }}>⚠️ {errorMessage}</Text>
+            </View>
+          )}
+
           <TouchableOpacity
             style={[styles.button, { backgroundColor: nombre.trim() ? c.boton : c.subtexto + '50', marginTop: 8 }]}
             onPress={handleCrearClub}
@@ -147,6 +165,9 @@ const styles = StyleSheet.create({
   input: { width: '100%', padding: 16, borderRadius: 12, borderWidth: 1, fontSize: 16, marginBottom: 20 },
   button: { padding: 18, borderRadius: 12, alignItems: 'center', width: '100%' },
   buttonText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
+  backButton: { alignSelf: 'flex-start', paddingVertical: 8, marginTop: 16, marginBottom: 8 },
+  backText: { fontSize: 15, fontWeight: '600' },
+  errorBanner: { width: '100%', padding: 12, borderWidth: 1, borderRadius: 12, marginBottom: 12 },
   codeCard: { padding: 24, borderRadius: 16, marginBottom: 30, width: '100%', alignItems: 'center', borderWidth: 1 },
   codeLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 2, marginBottom: 8, textTransform: 'uppercase' },
   codeText: { fontSize: 36, fontWeight: 'bold', letterSpacing: 8 }

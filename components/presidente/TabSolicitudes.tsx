@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { View, Text, TouchableOpacity, ScrollView, Modal, StyleSheet, Alert, ActivityIndicator, FlatList } from "react-native";
+import { View, Text, TouchableOpacity, ScrollView, Modal, StyleSheet, ActivityIndicator, FlatList } from "react-native";
 import { apiFetch } from "../../lib/api";
+import { parseApiError } from "../../lib/helper";
 import { useAuthStore } from "../../lib/store";
 import { useTheme } from "../../lib/useTheme";
 
@@ -59,6 +60,8 @@ export default function TabSolicitudes() {
   const [assignLinkedPlayerId, setAssignLinkedPlayerId] = useState<number | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [modalError, setModalError] = useState('');
+  const [fetchError, setFetchError] = useState('');
 
   const [teams, setTeams] = useState<Team[]>([]);
   const [teamPlayers, setTeamPlayers] = useState<TeamPlayer[]>([]);
@@ -80,7 +83,7 @@ export default function TabSolicitudes() {
       setRequests((prev) => (page === 0 ? items : [...prev, ...items]));
       setReqHasMore(!data.last);
       setReqPage(page);
-    } catch { Alert.alert("Error", "No se cargaron las solicitudes."); }
+    } catch { setFetchError("No se pudieron cargar las solicitudes."); }
     finally { setReqLoading(false); }
   }, [clubId]);
 
@@ -108,68 +111,70 @@ export default function TabSolicitudes() {
     setAssignRole(preRole);
     setAssignTeamId(null);
     setAssignLinkedPlayerId(null);
+    setModalError('');
     setReviewModal(true);
   };
 
   const handleReview = async () => {
-    console.log("[handleReview] Función iniciada");
     if (!selectedRequest) return;
-    console.log("[handleReview] Estado actual:", { reviewDecision, assignRole, assignTeamId, assignPlayerPosition });
-    try {
-      const payload: Record<string, unknown> = { decision: reviewDecision, assignedRole: assignRole };
-      if (reviewDecision === "APPROVED") {
-        if (assignRole === "PLAYER") {
-          if (!assignTeamId) {
-            console.warn("[handleReview] Validación fallida: assignTeamId es null");
-            return Alert.alert("Atención", "Debes seleccionar un equipo para el jugador.");
-          }
-          if (!assignPlayerPosition) {
-            console.warn("[handleReview] Validación fallida: assignPlayerPosition es null");
-            return Alert.alert("Atención", "Debes seleccionar una posición.");
-          }
-          payload.teamId = assignTeamId;
-          payload.playerPosition = assignPlayerPosition;
-        } else if (assignRole === "COACH") {
-          if (!assignTeamId) {
-            console.warn("[handleReview] Validación fallida: assignTeamId es null (COACH)");
-            return Alert.alert("Atención", "Debes seleccionar un equipo para el entrenador.");
-          }
-          if (!assignStaffRole) {
-            console.warn("[handleReview] Validación fallida: assignStaffRole es null");
-            return Alert.alert("Atención", "Debes seleccionar un rol técnico.");
-          }
-          payload.teamId = assignTeamId;
-          payload.staffRoleType = assignStaffRole;
-        } else if (assignRole === "RELATIVE") {
-          const childHasAccount = selectedRequest?.metadata?.childHasAccount;
-          if (childHasAccount !== false) {
-            // Hijo con cuenta existente → el presidente debe seleccionar la ficha
-            if (!assignLinkedPlayerId) {
-              console.warn("[handleReview] Validación fallida: assignLinkedPlayerId es null");
-              return Alert.alert("Atención", "Debes vincular un jugador/a existente.");
-            }
-            payload.linkedPlayerId = assignLinkedPlayerId;
-          }
-          // Si childHasAccount === false, el backend crea el jugador desde el metadata
-          payload.kinshipType = assignKinship;
+    setModalError('');
+
+    const payload: Record<string, unknown> = { decision: reviewDecision, assignedRole: assignRole };
+    if (reviewDecision === "APPROVED") {
+      if (assignRole === "PLAYER") {
+        if (!assignTeamId) {
+          setModalError("Debes seleccionar un equipo para el jugador.");
+          return;
         }
+        if (!assignPlayerPosition) {
+          setModalError("Debes seleccionar una posición.");
+          return;
+        }
+        payload.teamId = assignTeamId;
+        payload.playerPosition = assignPlayerPosition;
+      } else if (assignRole === "COACH") {
+        if (!assignTeamId) {
+          setModalError("Debes seleccionar un equipo para el entrenador.");
+          return;
+        }
+        if (!assignStaffRole) {
+          setModalError("Debes seleccionar un rol técnico.");
+          return;
+        }
+        payload.teamId = assignTeamId;
+        payload.staffRoleType = assignStaffRole;
+      } else if (assignRole === "RELATIVE") {
+        const childHasAccount = selectedRequest?.metadata?.childHasAccount;
+        if (childHasAccount !== false) {
+          if (!assignLinkedPlayerId) {
+            setModalError("Debes vincular un jugador/a existente.");
+            return;
+          }
+          payload.linkedPlayerId = assignLinkedPlayerId;
+        }
+        payload.kinshipType = assignKinship;
       }
-      setIsSubmitting(true);
-      console.log("[handleReview] Enviando payload:", JSON.stringify(payload));
+    }
+
+    setIsSubmitting(true);
+    try {
       const res = await apiFetch(`/api/president/requests/${selectedRequest.id}?clubId=${clubId}`, {
         method: "PATCH", body: JSON.stringify(payload),
       });
-      console.log("[handleReview] Respuesta recibida, status:", res.status);
       if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}));
-        throw new Error(errBody?.message ?? `Error ${res.status}`);
+        const errText = await res.text().catch(() => '');
+        try {
+          const errBody = JSON.parse(errText);
+          setModalError(parseApiError(errBody?.message || errBody?.error, 'Error al procesar la solicitud.'));
+        } catch {
+          setModalError(parseApiError(errText, 'Error al procesar la solicitud.'));
+        }
+        return;
       }
       setReviewModal(false);
       setRequests((prev) => prev.filter((r) => r.id !== selectedRequest.id));
-      Alert.alert("Éxito", "Solicitud procesada correctamente.");
-    } catch (err: any) {
-      console.error("[handleReview] Error capturado:", err);
-      Alert.alert("Error al procesar la solicitud", err?.message ?? "No se pudo procesar. Inténtalo de nuevo.");
+    } catch {
+      setModalError("Problema de conexión con el servidor.");
     } finally {
       setIsSubmitting(false);
     }
@@ -178,7 +183,12 @@ export default function TabSolicitudes() {
   return (
     <ScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
       {reqLoading && requests.length === 0 && <ActivityIndicator color={c.boton} style={{ marginTop: 20 }} />}
-      {!reqLoading && requests.length === 0 && (
+      {fetchError !== '' && (
+        <View style={[styles.errorBanner, { backgroundColor: `${c.error}15`, borderColor: c.error }]}>
+          <Text style={{ color: c.error, fontSize: 13, fontWeight: "500" }}>⚠️ {fetchError}</Text>
+        </View>
+      )}
+      {!reqLoading && requests.length === 0 && fetchError === '' && (
         <View style={[styles.emptyBox, { backgroundColor: c.input, borderColor: c.bordeInput }]}>
           <Text style={{ color: c.subtexto, textAlign: "center" }}>{"No hay solicitudes pendientes"}</Text>
         </View>
@@ -197,7 +207,7 @@ export default function TabSolicitudes() {
             <TouchableOpacity style={[styles.btnAction, { backgroundColor: "#DCFCE7", borderColor: "#16A34A" }]} onPress={() => openApproveModal(item)}>
               <Text style={{ color: "#16A34A", fontWeight: "bold", fontSize: 13 }}>{"✓ Aprobar"}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.btnAction, { backgroundColor: "#FEE2E2", borderColor: "#DC2626" }]} onPress={() => { setSelectedRequest(item); setReviewDecision("REJECTED"); setReviewModal(true); }}>
+            <TouchableOpacity style={[styles.btnAction, { backgroundColor: "#FEE2E2", borderColor: "#DC2626" }]} onPress={() => { setSelectedRequest(item); setReviewDecision("REJECTED"); setModalError(''); setReviewModal(true); }}>
               <Text style={{ color: "#DC2626", fontWeight: "bold", fontSize: 13 }}>{"✕ Rechazar"}</Text>
             </TouchableOpacity>
           </View>
@@ -355,6 +365,12 @@ export default function TabSolicitudes() {
                 </View>
               )}
 
+              {modalError !== '' && (
+                <View style={[styles.errorBanner, { backgroundColor: `${c.error}15`, borderColor: c.error }]}>
+                  <Text style={{ color: c.error, fontSize: 13, fontWeight: "500" }}>⚠️ {modalError}</Text>
+                </View>
+              )}
+
               <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
                 <TouchableOpacity style={[styles.btnMain, { backgroundColor: c.input, flex: 1, borderWidth: 1, borderColor: c.bordeInput }]} onPress={() => setReviewModal(false)}>
                   <Text style={{ color: c.texto, fontWeight: "bold" }}>{"Cancelar"}</Text>
@@ -384,4 +400,5 @@ const styles = StyleSheet.create({
   roleBadge: { alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1, marginTop: 6 },
   emptyBox: { borderRadius: 16, borderWidth: 1, padding: 30, marginBottom: 12, alignItems: "center" },
   infoBox: { borderRadius: 12, borderWidth: 1, padding: 12, marginBottom: 4 },
+  errorBanner: { padding: 12, borderWidth: 1, borderRadius: 12, marginBottom: 12 },
 });

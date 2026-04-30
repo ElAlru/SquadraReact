@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { Alert, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { router } from 'expo-router'
 import { useTheme } from '../../lib/useTheme'
 import ScreenContainer from '../../components/ScreenContainer'
 import { apiFetch } from '../../lib/api'
+import { parseApiError } from '../../lib/helper'
 import DateTimePicker from '@react-native-community/datetimepicker'
 
 const ROLES = [
@@ -30,6 +31,7 @@ export default function Unirse() {
   const [mensaje, setMensaje] = useState('')
   const [sent, setSent] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
 
   // PLAYER
   const [playerBirthDate, setPlayerBirthDate] = useState('')
@@ -49,20 +51,21 @@ export default function Unirse() {
   const [childPickerDate, setChildPickerDate] = useState(new Date(2012, 0, 1))
 
   const handleJoin = async () => {
+    setErrorMessage('')
     const cleanCode = codigo.toUpperCase().trim()
     if (!cleanCode || cleanCode.length !== 6) return
 
     if (rolSeleccionado === 'PLAYER' && !playerBirthDate) {
-      Alert.alert('Campo requerido', 'Por favor, indica la fecha de nacimiento del jugador.')
+      setErrorMessage('Por favor, indica la fecha de nacimiento del jugador.')
       return
     }
     if (rolSeleccionado === 'RELATIVE' && childHasAccount === null) {
-      Alert.alert('Campo requerido', 'Indica si tu hijo/a ya tiene cuenta en la app.')
+      setErrorMessage('Indica si tu hijo/a ya tiene cuenta en la app.')
       return
     }
     if (rolSeleccionado === 'RELATIVE' && childHasAccount === false) {
       if (!newChildFirstName.trim() || !newChildLastName.trim()) {
-        Alert.alert('Campo requerido', 'Por favor, indica el nombre y apellidos de tu hijo/a.')
+        setErrorMessage('Por favor, indica el nombre y apellidos de tu hijo/a.')
         return
       }
     }
@@ -103,13 +106,13 @@ export default function Unirse() {
         const errorText = await res.text()
         try {
           const data = JSON.parse(errorText)
-          Alert.alert('Aviso', data.error || data.message || 'No se pudo unir al club')
+          setErrorMessage(parseApiError(data.error || data.message, 'No se pudo unir al club.'))
         } catch {
-          Alert.alert('Aviso', errorText || 'No se pudo unir al club')
+          setErrorMessage(parseApiError(errorText, 'No se pudo unir al club.'))
         }
       }
-    } catch (err: any) {
-      Alert.alert('Error', 'Problema de conexión con el servidor.')
+    } catch {
+      setErrorMessage('Problema de conexión con el servidor.')
     } finally {
       setIsLoading(false)
     }
@@ -149,7 +152,11 @@ export default function Unirse() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Text style={[styles.title, { color: c.texto, marginTop: 40 }]}>Unirme a un club</Text>
+          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+            <Text style={[styles.backText, { color: c.boton }]}>← Volver</Text>
+          </TouchableOpacity>
+
+          <Text style={[styles.title, { color: c.texto }]}>Unirme a un club</Text>
 
           <Text style={[styles.label, { color: c.subtexto }]}>Código de invitación</Text>
           <TextInput
@@ -376,6 +383,12 @@ export default function Unirse() {
           />
           <Text style={[styles.charCount, { color: c.subtexto }]}>{mensaje.length}/500</Text>
 
+          {errorMessage !== '' && (
+            <View style={[styles.errorBanner, { backgroundColor: `${c.error}15`, borderColor: c.error }]}>
+              <Text style={{ color: c.error, fontSize: 13, fontWeight: '500' }}>⚠️ {errorMessage}</Text>
+            </View>
+          )}
+
           <TouchableOpacity
             style={[styles.button, { backgroundColor: canSubmit ? c.boton : c.subtexto + '50', marginTop: 8 }]}
             onPress={handleJoin}
@@ -413,4 +426,7 @@ const styles = StyleSheet.create({
   charCount: { alignSelf: 'flex-end', fontSize: 12, marginBottom: 16 },
   button: { padding: 18, borderRadius: 12, alignItems: 'center', width: '100%' },
   buttonText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
+  errorBanner: { width: '100%', padding: 12, borderWidth: 1, borderRadius: 12, marginBottom: 12 },
+  backButton: { alignSelf: 'flex-start', paddingVertical: 8, marginTop: 16, marginBottom: 8 },
+  backText: { fontSize: 15, fontWeight: '600' },
 })

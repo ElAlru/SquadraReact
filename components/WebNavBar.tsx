@@ -1,7 +1,7 @@
 import { usePathname, useRouter } from 'expo-router'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Platform, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { Image, Platform, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import i18n from '../lib/i18n'
 import { useAuthStore } from '../lib/store'
 import { useTheme } from '../lib/useTheme'
@@ -90,12 +90,16 @@ export default function WebNavBar() {
           <View
             style={[
               styles.avatarCircle,
-              { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35` },
+              { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35`, overflow: 'hidden' },
             ]}
           >
-            <Text style={[styles.avatarText, { color: c.boton }]}>
-              {profile?.firstName?.charAt(0)?.toUpperCase() || 'U'}
-            </Text>
+            {profile?.photoUrl ? (
+              <Image source={{ uri: profile.photoUrl }} style={{ width: 32, height: 32 }} resizeMode="cover" />
+            ) : (
+              <Text style={[styles.avatarText, { color: c.boton }]}>
+                {profile?.firstName?.charAt(0)?.toUpperCase() || 'U'}
+              </Text>
+            )}
           </View>
           <Text style={[styles.avatarName, { color: c.texto }]} numberOfLines={1}>
             {profile?.firstName || 'Usuario'}

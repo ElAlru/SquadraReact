@@ -73,7 +73,7 @@ export default function Login() {
       const response = await fetch(`${API_URL}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ email: email.trim(), password }),
+        body: JSON.stringify({ email: email.trim(), password, platform: Platform.OS === 'web' ? 'web' : 'mobile' }),
       });
 
       if (!response.ok) {

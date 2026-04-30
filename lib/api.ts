@@ -1,14 +1,11 @@
-import { useAuthStore } from './store'; 
+import { useAuthStore } from './store';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://squadraapi.onrender.com';
 
 export async function apiFetch(endpoint: string, options: any = {}) {
   try {
-    // ✅ CORREGIDO: Ahora leemos 'token' directamente, que es como se llama en tu nuevo store.ts
-    const token = useAuthStore.getState().token; 
-    console.log("🔍 DEBUG TOKEN:", token ? `SÍ (longitud: ${token.length})` : "NO HAY TOKEN (es NULL)");
-  if (token) console.log("🔍 CABECERA:", `Bearer ${token.substring(0, 15)}...`);
-    
+    const token = useAuthStore.getState().token;
+
     const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
     const url = `${API_URL}${cleanEndpoint}`;
 
@@ -17,20 +14,20 @@ export async function apiFetch(endpoint: string, options: any = {}) {
       ...options.headers,
     };
 
-    // 🔑 Si hay token, lo metemos en la mochila
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
-
-    console.log(`🚀 [apiFetch] ${options.method || 'GET'} -> ${url}`);
-    if (!token) console.warn("⚠️ OJO: Enviando petición SIN TOKEN");
 
     const response = await fetch(url, {
       ...options,
       headers,
     });
 
-    console.log(`📥 [apiFetch] Status: ${response.status}`);
+    // Auto-logout when the server invalidates the session (e.g. login from another device)
+    if (response.status === 401 && token) {
+      useAuthStore.getState().logout();
+    }
+
     return response;
 
   } catch (error) {

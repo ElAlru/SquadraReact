@@ -2,57 +2,86 @@ import { useFonts } from 'expo-font';
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState } from "react";
+import { Platform } from "react-native";
 import "../lib/i18n";
 import { useAuthStore } from "../lib/store";
 
-// Evitamos que la pantalla de carga (Splash Screen) desaparezca automáticamente
 SplashScreen.preventAutoHideAsync();
+
+const STORAGE_KEY = 'squadra-auth';
 
 export default function RootLayout() {
   const router = useRouter();
   const segments = useSegments();
   const token = useAuthStore((state) => state.token);
-  
-  const [isReady, setIsReady] = useState(false);
 
-  // 1. Cargamos las fuentes
   const [fontsLoaded, fontError] = useFonts({
-    'SquadraStencil': require('../assets/fonts/SquadraFont.ttf'), 
+    'SquadraStencil': require('../assets/fonts/SquadraFont.ttf'),
   });
 
-  // 2. Controlamos cuándo quitar la pantalla de carga
+  // Native: ready immediately (state lives in memory while app runs).
+  // Web: need to restore from localStorage before rendering anything.
+  const [isReady, setIsReady] = useState(Platform.OS !== 'web');
+
+  // Web: read persisted session from localStorage on first mount
   useEffect(() => {
-    // Si la fuente ha terminado de cargar (o si hubo un error y no pudo)
+    if (Platform.OS !== 'web') return;
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw);
+        if (saved?.token) {
+          useAuthStore.setState(saved);
+        }
+      }
+    } catch {
+      // corrupted storage — ignore and start fresh
+    } finally {
+      setIsReady(true);
+    }
+  }, []);
+
+  // Web: persist store changes to localStorage
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    return useAuthStore.subscribe((state) => {
+      const {
+        token, profile, activeRole, activeClubId, activeClubName,
+        activeClubLogo, activeTeamId, activeSeasonId, activeSeasonName,
+        themeMode, language,
+      } = state;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        token, profile, activeRole, activeClubId, activeClubName,
+        activeClubLogo, activeTeamId, activeSeasonId, activeSeasonName,
+        themeMode, language,
+      }));
+    });
+  }, []);
+
+  useEffect(() => {
     if (fontsLoaded || fontError) {
-      SplashScreen.hideAsync(); // Ocultamos el Splash Screen
-      setIsReady(true);         // Marcamos la app como lista
+      SplashScreen.hideAsync();
     }
   }, [fontsLoaded, fontError]);
 
-  // 3. Controlamos la redirección (Auth Guard)
+  // Auth guard: only redirect once fonts and persistence are ready
   useEffect(() => {
-    // Si la app aún no está lista, no hacemos nada
-    if (!isReady) return;
+    if ((!fontsLoaded && !fontError) || !isReady) return;
 
     const inAuthGroup = segments[0] === "(auth)";
-
     if (!token && !inAuthGroup) {
-      // Sin sesión y fuera de auth -> Al inicio
       router.replace("/(auth)");
     } else if (token && inAuthGroup) {
-      // Con sesión y dentro de auth -> Al selector de club
       router.replace("/(selector)");
     }
-  }, [token, isReady, segments]);
+  }, [token, fontsLoaded, fontError, isReady, segments]);
 
-  // Si las fuentes no han cargado, no renderizamos la interfaz
-  if (!isReady) return null;
+  if ((!fontsLoaded && !fontError) || !isReady) return null;
 
-  // 4. Renderizamos la estructura de navegación principal
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(auth)" />
-      <Stack.Screen name="(selector)" /> 
+      <Stack.Screen name="(selector)" />
       <Stack.Screen name="(club)" />
     </Stack>
   );

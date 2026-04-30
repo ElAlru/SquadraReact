@@ -393,15 +393,14 @@ export default function Calendario() {
             type={mode}
             value={value || ""}
             onChange={(e) => onChange?.(e.target.value)}
-            style={{ border: "none", background: "transparent", fontSize: 14, color: "inherit", outline: "none", width: "100%", cursor: "pointer" }}
+            style={{ border: "none", background: "transparent", fontSize: 15, color: c.texto, outline: "none", width: "100%", padding: 4 }}
           />
         </View>
       );
     }
     return (
       <TouchableOpacity style={[styles.pickerBtn, { backgroundColor: c.input, borderColor: value ? c.boton : c.bordeInput }]} onPress={onPress}>
-        <Text style={{ color: value ? c.texto : c.subtexto, fontSize: 14 }}>{value || label}</Text>
-        <Text style={{ fontSize: 15 }}>{mode === "time" ? "🕒" : "📅"}</Text>
+        <Text style={{ color: value ? c.texto : c.subtexto, fontSize: 15 }}>{value || label}</Text>
       </TouchableOpacity>
     );
   };
@@ -828,7 +827,7 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 17, fontWeight: "bold", marginBottom: 14 },
   inputLabel: { fontSize: 13, fontWeight: "bold", marginBottom: 6, marginTop: 8 },
   textInput: { borderWidth: 1, borderRadius: 12, padding: 12, fontSize: 14, marginBottom: 5 },
-  pickerBtn: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderWidth: 1.5, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 11, marginBottom: 5 },
+  pickerBtn: { borderWidth: 1, borderRadius: 12, padding: 14, marginBottom: 5 },
   chipsRowModal: { flexDirection: "row", gap: 10, marginBottom: 10 },
   chipModal: { flex: 1, paddingVertical: 11, borderRadius: 12, alignItems: "center", borderWidth: 1 },
   btnCrear: { paddingVertical: 13, borderRadius: 12, alignItems: "center" },

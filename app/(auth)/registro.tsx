@@ -186,6 +186,7 @@ export default function Register() {
         docType,
         docNumber: docNumber.trim().toUpperCase(),
         photoUrl: profilePhoto || "",
+        platform: Platform.OS === 'web' ? 'web' : 'mobile',
       };
 
       const API_URL = process.env.EXPO_PUBLIC_API_URL || "https://squadraapi.onrender.com";

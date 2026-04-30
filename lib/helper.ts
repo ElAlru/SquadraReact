@@ -34,6 +34,14 @@ export const isValidPassword = (password: string): boolean => {
 
 
 
+// Limpia mensajes de error de Spring Boot como "400 BAD_REQUEST "mensaje""
+// devolviendo solo la parte legible para el usuario.
+export const parseApiError = (raw: string, fallback = 'Error desconocido.'): string => {
+  if (!raw?.trim()) return fallback
+  const match = raw.trim().match(/^\d{3}\s+\S+\s+"(.+)"$/)
+  return match ? match[1] : raw.trim()
+}
+
 export const isValidDocument = (tipo: DocType, numero: string): boolean => {
   switch (tipo) {
     case 'DNI':

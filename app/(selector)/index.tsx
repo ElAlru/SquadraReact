@@ -2,19 +2,19 @@ import { router, useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
+  Image,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  useColorScheme,
   View,
 } from "react-native";
 
 import LogoSimbolo from "../../components/LogoSimbolo";
 import ScreenContainer from "../../components/ScreenContainer";
 import { apiFetch } from "../../lib/api";
+import i18n from "../../lib/i18n";
 import { useAuthStore } from "../../lib/store";
 import { useTheme } from "../../lib/useTheme";
 
@@ -31,10 +31,21 @@ const ROL_LABEL: Record<string, string> = {
 export default function SelectorIndex() {
   const c = useTheme();
   const { setActiveClub, setSeason } = useAuthStore();
+  const profile = useAuthStore((s: any) => s.profile);
+  const logout = useAuthStore((s: any) => s.logout);
   const themeMode = useAuthStore((s: any) => s.themeMode);
-  const colorScheme = useColorScheme();
-  
-  const isDark = themeMode === "dark" || (themeMode === "auto" && colorScheme === "dark");
+  const language = useAuthStore((s: any) => s.language);
+  const setThemeMode = useAuthStore((s: any) => s.setThemeMode);
+  const setLanguage = useAuthStore((s: any) => s.setLanguage);
+  const handleLogout = () => {
+    logout();
+    router.replace("/login");
+  };
+
+  const handleLanguage = (lang: 'es' | 'en') => {
+    setLanguage(lang);
+    i18n.changeLanguage(lang);
+  };
 
   const [clubes, setClubes] = useState<any[]>([]);
   const [requests, setRequests] = useState<any[]>([]);
@@ -85,6 +96,59 @@ export default function SelectorIndex() {
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadAllData(true)} tintColor={c.boton} />}
       >
         
+        {/* ── Cabecera alineada a la derecha (igual que WebNavBar) ── */}
+        <View style={styles.topRow}>
+          {/* Chips de tema e idioma */}
+          <View style={styles.chipsGroup}>
+            {([{ value: 'light', label: '☀️' }, { value: 'auto', label: '⚙️' }, { value: 'dark', label: '🌙' }] as const).map((opt) => (
+              <TouchableOpacity
+                key={opt.value}
+                style={[styles.chip, { backgroundColor: themeMode === opt.value ? c.boton : 'transparent', borderColor: themeMode === opt.value ? c.boton : c.bordeInput }]}
+                onPress={() => setThemeMode(opt.value)}
+              >
+                <Text style={[styles.chipText, { color: themeMode === opt.value ? '#fff' : c.texto }]}>{opt.label}</Text>
+              </TouchableOpacity>
+            ))}
+            <View style={[styles.dividerV, { backgroundColor: c.bordeInput }]} />
+            {(['es', 'en'] as const).map((lang) => (
+              <TouchableOpacity
+                key={lang}
+                style={[styles.chip, { backgroundColor: language === lang ? c.boton : 'transparent', borderColor: language === lang ? c.boton : c.bordeInput }]}
+                onPress={() => handleLanguage(lang)}
+              >
+                <Text style={[styles.chipText, { color: language === lang ? '#fff' : c.texto }]}>{lang.toUpperCase()}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Perfil + logout */}
+          <View style={[styles.profilePill, { backgroundColor: c.input, borderColor: c.bordeInput }]}>
+            <View style={[styles.profileAvatar, { backgroundColor: `${c.boton}18`, borderColor: `${c.boton}35`, overflow: 'hidden' }]}>
+              {profile?.photoUrl ? (
+                <Image source={{ uri: profile.photoUrl }} style={{ width: 34, height: 34 }} resizeMode="cover" />
+              ) : (
+                <Text style={[styles.profileAvatarText, { color: c.boton }]}>
+                  {profile?.firstName?.charAt(0)?.toUpperCase() || 'U'}
+                </Text>
+              )}
+            </View>
+            <View style={{ maxWidth: 140 }}>
+              <Text style={[styles.profileName, { color: c.texto }]} numberOfLines={1}>
+                {[profile?.firstName, profile?.lastName].filter(Boolean).join(' ') || 'Usuario'}
+              </Text>
+              <Text style={[styles.profileEmail, { color: c.subtexto }]} numberOfLines={1}>
+                {profile?.email || ''}
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={handleLogout}
+              style={[styles.logoutBtn, { borderColor: '#ef444435', backgroundColor: '#ef444410' }]}
+            >
+              <Text style={{ color: '#ef4444', fontWeight: '600', fontSize: 13 }}>🚪 Salir</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         <View style={styles.headerTextContainer}>
           <LogoSimbolo size={40} color={c.colorMarca} style={{ marginBottom: 8 }} />
           <Text style={[styles.tituloTexto, { color: c.colorMarca }]}>
@@ -153,6 +217,18 @@ export default function SelectorIndex() {
 
 const styles = StyleSheet.create({
   container: { flexGrow: 1, padding: 24, paddingTop: 60 },
+
+  topRow: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 24, flexWrap: 'wrap' },
+  chipsGroup: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  dividerV: { width: 1, height: 20, marginHorizontal: 2 },
+  chip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, borderWidth: 1.5 },
+  chipText: { fontSize: 12, fontWeight: '600' },
+  profilePill: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, borderWidth: 1, paddingVertical: 8, paddingHorizontal: 12 },
+  profileAvatar: { width: 34, height: 34, borderRadius: 10, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  profileAvatarText: { fontSize: 15, fontWeight: 'bold' },
+  profileName: { fontSize: 13, fontWeight: '700' },
+  profileEmail: { fontSize: 11, marginTop: 1 },
+  logoutBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1 },
   headerTextContainer: { alignItems: "center", marginBottom: 30 },
   tituloTexto: { fontFamily: "SquadraStencil", fontSize: 32, textAlign: "center", letterSpacing: 2 },
   title: { fontSize: 28, fontWeight: "800", marginBottom: 30 },
