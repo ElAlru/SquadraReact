@@ -1,24 +1,21 @@
 import DateTimePicker from "@react-native-community/datetimepicker";
-import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
-  Modal,
+  Alert, FlatList, Modal,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  View,
-} from "react-native";
+  View
+} from 'react-native';
 import ScreenContainer from "../../components/ScreenContainer";
 import { apiFetch } from "../../lib/api";
 import { useAuthStore } from "../../lib/store";
 import { useTheme } from "../../lib/useTheme";
-import * as FileSystem from "expo-file-system";
-import * as Sharing from "expo-sharing";
 
 interface CalendarEvent {
   id: number;
@@ -361,7 +358,10 @@ export default function Calendario() {
               <Text style={[styles.dayText, { color: isSelected ? c.boton : c.texto, fontWeight: isSelected ? "700" : "600" }]}>{currentDate}</Text>
               <View style={styles.dotsContainer}>
                 {hasMatch && <View style={[styles.dot, { backgroundColor: c.boton }]} />}
-                {hasTraining && <View style={[styles.dot, { backgroundColor: "#3b82f6" }]} />}
+                {hasTraining && <View style={[styles.dot, { backgroundColor: '#3b82f6' }]} />}
+                {dayEvents.length > 2 && (
+                  <Text style={{ fontSize: 8, color: c.subtexto, fontWeight: '700' }}>+{dayEvents.length - 2}</Text>
+                )}
               </View>
             </TouchableOpacity>,
           );
@@ -471,29 +471,51 @@ export default function Calendario() {
         </View>
 
         {/* LISTA DE EVENTOS */}
-        <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-          <Text style={[styles.sectionTitle, { color: c.texto, marginBottom: 10 }]}>Lista de Eventos</Text>
-          {events.length === 0 && !loading && (
-            <View style={[styles.emptyCard, { backgroundColor: c.input, borderColor: c.bordeInput }]}>
-              <Text style={{ fontSize: 28, marginBottom: 6 }}>📭</Text>
-              <Text style={[styles.metaText, { color: c.subtexto, textAlign: "center" }]}>No hay eventos este mes.</Text>
-            </View>
-          )}
-          {events.map((item) => {
+        <FlatList
+          data={events}
+          keyExtractor={(item) => `${item.type}-${item.id}`}
+          contentContainerStyle={styles.container}
+          showsVerticalScrollIndicator={false}
+          nestedScrollEnabled={true} 
+          ListHeaderComponent={
+            <Text style={[styles.sectionTitle, { color: c.texto, marginBottom: 10 }]}>
+              Lista de Eventos
+            </Text>
+          }
+          ListEmptyComponent={
+            !loading ? (
+              <View style={[styles.emptyCard, { backgroundColor: c.input, borderColor: c.bordeInput }]}>
+                <Text style={{ fontSize: 28, marginBottom: 6 }}>📭</Text>
+                <Text style={[styles.metaText, { color: c.subtexto, textAlign: "center" }]}>
+                  No hay eventos este mes.
+                </Text>
+              </View>
+            ) : null
+          }
+          renderItem={({ item }) => {
             const eventKey = `${item.type}-${item.id}`;
             const isDeleting = deletingId === eventKey;
             const showDelete = canDeleteEvent(item);
+            
             return (
-              <View key={eventKey} style={[styles.card, { backgroundColor: c.input, borderColor: c.bordeInput, borderLeftWidth: 4, borderLeftColor: item.type === "MATCH" ? c.boton : "#3b82f6" }]}>
+              <View 
+                style={[
+                  styles.card, 
+                  { backgroundColor: c.input, borderColor: c.bordeInput, borderLeftWidth: 4, borderLeftColor: item.type === "MATCH" ? c.boton : "#3b82f6" }
+                ]}
+              >
                 <View style={styles.cardRow}>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.eventoTitulo, { color: c.texto }]}>{item.type === "MATCH" ? "⚽" : "🏃"} {item.title}</Text>
+                    <Text style={[styles.eventoTitulo, { color: c.texto }]}>
+                      {item.type === "MATCH" ? "⚽" : "🏃"} {item.title}
+                    </Text>
                     <Text style={[styles.metaText, { color: c.subtexto }]}>
                       📅 {new Date(item.startTime).toLocaleDateString("es-ES")} · 🕒 {new Date(item.startTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                     </Text>
                     {item.location && <Text style={[styles.metaText, { color: c.subtexto, marginTop: 2 }]}>📍 {item.location}</Text>}
                     {item.teamName && <Text style={[styles.metaText, { color: c.subtexto, marginTop: 2 }]}>👥 {item.teamName}</Text>}
                   </View>
+                  
                   {showDelete && (isDeleting
                     ? <ActivityIndicator size="small" color="#ef4444" style={{ padding: 10 }} />
                     : <TouchableOpacity style={styles.deleteBtn} onPress={() => handleDeleteEvent(item.id, item.type)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} activeOpacity={0.7}>
@@ -503,8 +525,8 @@ export default function Calendario() {
                 </View>
               </View>
             );
-          })}
-        </ScrollView>
+          }}
+        />
 
         {/* FAB */}
         {canCreate && (

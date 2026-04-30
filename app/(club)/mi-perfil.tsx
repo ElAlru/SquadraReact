@@ -3,7 +3,7 @@ import * as ImagePicker from 'expo-image-picker'
 import { router } from 'expo-router'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ActivityIndicator, Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View, Modal, TextInput } from 'react-native'
 import ScreenContainer from '../../components/ScreenContainer'
 import i18n from '../../lib/i18n'
 import { useAuthStore } from '../../lib/store'
@@ -69,6 +69,12 @@ async function uploadProfilePhoto(uri: string, token: string): Promise<string> {
 }
 
 export default function MiPerfil() {
+const [pwModal, setPwModal] = useState(false);
+  const [newPw, setNewPw] = useState('');
+  const [confirmPw, setConfirmPw] = useState('');
+  const [pwLoading, setPwLoading] = useState(false);
+  const [pwError, setPwError] = useState('');
+
   const c = useTheme()
   const { t } = useTranslation()
   const profile = useAuthStore((s: any) => s.profile)
@@ -79,6 +85,30 @@ export default function MiPerfil() {
   const setThemeMode = useAuthStore((s: any) => s.setThemeMode)
   const setLanguage = useAuthStore((s: any) => s.setLanguage)
   const [uploading, setUploading] = useState(false)
+
+  const handleChangePassword = async () => {
+    setPwError('');
+    if (newPw.length < 6) { setPwError('Mínimo 6 caracteres'); return; }
+    if (newPw !== confirmPw) { setPwError('Las contraseñas no coinciden'); return; }
+    setPwLoading(true);
+      try {
+        // OJO: Aquí asumo que ya tienes una variable 'token' sacada de tu estado global (Zustand/Context)
+        const res = await fetch(`${API_URL}/api/profile/password`, {
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ newPassword: newPw }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        setPwModal(false);
+        setNewPw(''); 
+        setConfirmPw('');
+        alert('Contraseña actualizada correctamente');
+      } catch (e: any) {
+        setPwError(e.message || 'Error al cambiar la contraseña');
+      } finally {
+        setPwLoading(false);
+      }
+    };
 
   const handleLanguage = (lang: 'es' | 'en') => {
     setLanguage(lang)
@@ -199,17 +229,15 @@ export default function MiPerfil() {
           </View>
         </View>
 
-        {/* Cambiar contraseña */}
+        {/* Cambiar contraseña (BOTÓN ARREGLADO) */}
         <TouchableOpacity
           style={[styles.card, styles.accionBtn, { borderColor: c.bordeInput, backgroundColor: c.input }]}
-          onPress={() => {
-            router.replace('/(auth)/recuperar-password');
-          }}
+          onPress={() => setPwModal(true)}
         >
           <Text style={{ fontSize: 20 }}>🔑</Text>
           <View style={{ flex: 1 }}>
             <Text style={[styles.accionTitle, { color: c.texto }]}>Cambiar contraseña</Text>
-            <Text style={[styles.accionSub, { color: c.subtexto }]}>Te enviaremos un enlace a tu email</Text>
+            <Text style={[styles.accionSub, { color: c.subtexto }]}>Introduce tu nueva contraseña</Text>
           </View>
           <Text style={{ color: c.subtexto, fontSize: 20 }}>›</Text>
         </TouchableOpacity>
@@ -228,6 +256,53 @@ export default function MiPerfil() {
         </TouchableOpacity>
 
       </ScrollView>
+
+      {/* MODAL DE CAMBIO DE CONTRASEÑA PEGADO AQUÍ */}
+      <Modal visible={pwModal} transparent animationType="slide">
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+          <View style={{ backgroundColor: c.fondo, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40, gap: 12 }}>
+            <Text style={{ fontSize: 18, fontWeight: '700', color: c.texto }}>Cambiar contraseña</Text>
+            
+            <TextInput
+              style={{ backgroundColor: c.input, borderWidth: 1, borderColor: c.bordeInput, borderRadius: 12, padding: 14, color: c.texto }}
+              placeholder="Nueva contraseña (min. 6)" 
+              placeholderTextColor={c.subtexto}
+              secureTextEntry 
+              value={newPw} 
+              onChangeText={setNewPw}
+            />
+            
+            <TextInput
+              style={{ backgroundColor: c.input, borderWidth: 1, borderColor: c.bordeInput, borderRadius: 12, padding: 14, color: c.texto }}
+              placeholder="Confirmar contraseña" 
+              placeholderTextColor={c.subtexto}
+              secureTextEntry 
+              value={confirmPw} 
+              onChangeText={setConfirmPw}
+            />
+            
+            {pwError !== '' && <Text style={{ color: '#ef4444', fontSize: 13 }}>⚠️ {pwError}</Text>}
+            
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity 
+                style={{ flex: 1, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: c.bordeInput, alignItems: 'center' }} 
+                onPress={() => { setPwModal(false); setNewPw(''); setConfirmPw(''); setPwError(''); }}
+              >
+                <Text style={{ color: c.texto, fontWeight: '600' }}>Cancelar</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={{ flex: 1, padding: 14, borderRadius: 12, backgroundColor: c.boton, alignItems: 'center' }} 
+                onPress={handleChangePassword} 
+                disabled={pwLoading}
+              >
+                {pwLoading ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Guardar</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
     </ScreenContainer>
   )
 }

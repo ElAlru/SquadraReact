@@ -21,10 +21,11 @@ import {
   isEmpty,
   isValidEmail,
   isValidPassword,
+  isValidDocument,
 } from "../../lib/helper";
 import { useAuthStore } from "../../lib/store";
-import { useTheme } from "../../lib/useTheme";
 import { useGoogleAuth } from "../../lib/useGoogleAuth";
+import { useTheme } from "../../lib/useTheme";
 
 function GoogleIcon() {
   return (
@@ -108,6 +109,10 @@ export default function Register() {
       setErrorMessage(t("register.errorDoc", "El número de documento es obligatorio."));
       return false;
     }
+    if (!isValidDocument(docType, docNumber)) {
+    setErrorMessage(t("register.errorDocument", { type: docType }) || `El ${docType} no es válido.`)
+    return false
+  }
     if (!isValidEmail(email)) {
       setErrorMessage(t("register.errorEmail", "Introduce un email válido."));
       return false;
@@ -285,7 +290,7 @@ export default function Register() {
           </View>
 
           {/* RECUPERADO: Número de Documento */}
-          <Text style={[styles.label, { color: c.subtexto }]}>{t("register.docNumber", "Número de documento")} *</Text>
+          <Text style={[styles.label, { color: c.subtexto }]}>{t("register.docNumber", { type: docType })} *</Text>
           <TextInput
             style={[styles.input, { backgroundColor: c.input, borderColor: c.bordeInput, color: c.texto }]}
             value={docNumber} onChangeText={setDocNumber} placeholder={DOC_PLACEHOLDER[docType]} placeholderTextColor={c.subtexto} autoCapitalize="characters"
