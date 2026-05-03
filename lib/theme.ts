@@ -8,23 +8,23 @@ export const colores = {
     bordeInput: '#d1d5db',
     error: '#ef4444',
     boton: '#16a34a',
-    botonTexto: '#ffffff',
+    botonTexto: '#ffffff', 
     // Propiedades de marca
     colorMarca: '#000000',
     marcaAguaOpacity: 0.03,
   },
   oscuro: {
     isDark: true,
-    fondo: '#1a1a1a',      // <--- Este es tu "casi negro" del Login original
+    fondo: '#1a1a1a',
     texto: '#f1f5f9',
     subtexto: '#94a3b8',
-    input: '#27272a',      // <--- El gris de los inputs del Login
+    input: '#27272a',
     bordeInput: '#3f3f46',
     error: '#ef4444',
     boton: '#16a34a',
     botonTexto: '#ffffff',
     // Propiedades de marca
-    colorMarca: '#ffc06d', // <--- Tu naranja/dorado
+    colorMarca: '#ffc06d',
     marcaAguaOpacity: 0.06,
   },
 }

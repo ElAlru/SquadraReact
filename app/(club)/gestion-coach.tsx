@@ -72,7 +72,19 @@ interface CalendarEvent {
   title: string;
   teamId: number;
   teamName: string;
+  location?: string;
 }
+
+const formatEventLabel = (e: CalendarEvent): string => {
+  const d = new Date(e.startTime);
+  const day = String(d.getDate()).padStart(2, "0");
+  const mon = String(d.getMonth() + 1).padStart(2, "0");
+  const time = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  if (e.type === "TRAINING") {
+    return e.location ? `${day}/${mon} · ${time}\n(${e.location})` : `${day}/${mon} · ${time}`;
+  }
+  return `${e.title}\n${day}/${mon} · ${time}`;
+};
 
 export default function GestionCoach() {
   const c = useTheme();
@@ -100,6 +112,21 @@ export default function GestionCoach() {
   const [teams, setTeams] = useState<{ id: number; label: string }[]>([]);
 
   const [saving, setSaving] = useState(false);
+
+  // Eventos filtrados según el tab activo para que nunca se mezclen tipos
+  const selectorEvents =
+    activeTab === "ASISTENCIA" ? events.filter(e => e.type === "TRAINING") :
+    (activeTab === "CONVOCATORIAS" || activeTab === "STATS") ? events.filter(e => e.type === "MATCH") :
+    events;
+
+  const handleTabChange = (tab: Tab) => {
+    setActiveTab(tab);
+    if (tab === "MULTAS") return;
+    const relevant = tab === "ASISTENCIA"
+      ? events.filter(e => e.type === "TRAINING")
+      : events.filter(e => e.type === "MATCH");
+    setSelectedEvent(relevant.length > 0 ? relevant[0] : null);
+  };
 
   // Estados modales
   const [fineModal, setFineModal] = useState(false);
@@ -435,23 +462,13 @@ export default function GestionCoach() {
     </View>
   );
 
-  const renderStats = () => {
-    const isToday = selectedEvent
-      ? new Date(selectedEvent.startTime).toDateString() === new Date().toDateString()
-      : false;
-
-    return (
-      <View style={s.tabContent}>
-        {selectedEvent?.type === "MATCH" ? (
-          <>
-            {isToday && (
-              <Text style={{ color: COLOR_EXITO, fontWeight: "700", fontSize: 13, marginBottom: 10 }}>
-                ⚡ Modo Partido en Vivo
-              </Text>
-            )}
-            {stats.length === 0 ? (
-              <Text style={[s.hintText, { color: c.subtexto }]}>Sin estadísticas aún.</Text>
-            ) : stats.map((item, idx) => (
+  const renderStats = () => (
+    <View style={s.tabContent}>
+      {selectedEvent?.type === "MATCH" ? (
+        <>
+          {stats.length === 0 ? (
+            <Text style={[s.hintText, { color: c.subtexto }]}>Sin estadísticas para este partido.</Text>
+          ) : stats.map((item) => (
               <View
                 key={item.playerId}
                 style={[s.playerRow, { backgroundColor: c.input, flexDirection: "column", alignItems: "flex-start" }]}
@@ -460,104 +477,32 @@ export default function GestionCoach() {
                   <Text style={[s.playerName, { color: c.texto }]}>
                     {item.firstName} {item.lastName}
                   </Text>
-                  {isToday && (
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                      <Text style={{ fontSize: 12, color: c.subtexto }}>Titular</Text>
-                      <Switch
-                        value={item.wasStarter}
-                        onValueChange={(v) => {
-                          const next = [...stats];
-                          next[idx].wasStarter = v;
-                          setStats(next);
-                        }}
-                      />
-                    </View>
+                  {item.wasStarter && (
+                    <Text style={{ fontSize: 11, color: c.boton, fontWeight: "700" }}>Titular</Text>
                   )}
                 </View>
-                {isToday ? (
-                  // LIVE MODE — contadores +/- sin teclado
-                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
-                    {([
-                      { label: "Goles",     field: "goals"         as const },
-                      { label: "Asist.",    field: "assists"       as const },
-                      { label: "Amarillas", field: "yellowCards"   as const },
-                      { label: "Rojas",     field: "redCards"      as const },
-                      { label: "Minutos",   field: "minutesPlayed" as const },
-                    ]).map(({ label, field }) => (
-                      <View key={field} style={{ alignItems: "center", minWidth: 60 }}>
-                        <Text style={{ fontSize: 10, color: c.subtexto, marginBottom: 4 }}>{label}</Text>
-                        <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                          <TouchableOpacity
-                            style={{ width: 28, height: 28, borderRadius: 6, backgroundColor: c.fondo, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: c.bordeInput }}
-                            onPress={() => {
-                              const next = [...stats];
-                              (next[idx] as any)[field] = Math.max(0, (next[idx] as any)[field] - 1);
-                              setStats(next);
-                            }}
-                          >
-                            <Text style={{ color: c.texto, fontWeight: "700" }}>−</Text>
-                          </TouchableOpacity>
-                          <Text style={{ minWidth: 20, textAlign: "center", color: c.texto, fontWeight: "700" }}>
-                            {item[field]}
-                          </Text>
-                          <TouchableOpacity
-                            style={{ width: 28, height: 28, borderRadius: 6, backgroundColor: c.fondo, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: c.bordeInput }}
-                            onPress={() => {
-                              const next = [...stats];
-                              (next[idx] as any)[field] = (next[idx] as any)[field] + 1;
-                              setStats(next);
-                            }}
-                          >
-                            <Text style={{ color: c.texto, fontWeight: "700" }}>+</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    ))}
-                  </View>
-                ) : (
-                  // EDIT MODE — TextInputs originales (partidos pasados)
-                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
-                    {([
-                      { label: "Goles",     field: "goals"         as const },
-                      { label: "Asist.",    field: "assists"       as const },
-                      { label: "Amarillas", field: "yellowCards"   as const },
-                      { label: "Rojas",     field: "redCards"      as const },
-                      { label: "Minutos",   field: "minutesPlayed" as const },
-                    ]).map(({ label, field }) => (
-                      <View key={field} style={{ alignItems: "center", minWidth: 60 }}>
-                        <Text style={{ fontSize: 10, color: c.subtexto, marginBottom: 2 }}>{label}</Text>
-                        <TextInput
-                          style={[s.scoreInput, { borderColor: c.bordeInput, backgroundColor: c.fondo, color: c.texto }]}
-                          value={String(item[field])}
-                          keyboardType="numeric"
-                          onChangeText={(v) => {
-                            const next = [...stats];
-                            (next[idx] as any)[field] = Number(v) || 0;
-                            setStats(next);
-                          }}
-                        />
-                      </View>
-                    ))}
-                  </View>
-                )}
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
+                  {([
+                    { label: "Goles",     value: item.goals },
+                    { label: "Asist.",    value: item.assists },
+                    { label: "Amarillas", value: item.yellowCards },
+                    { label: "Rojas",     value: item.redCards },
+                    { label: "Minutos",   value: item.minutesPlayed },
+                  ]).map(({ label, value }) => (
+                    <View key={label} style={{ alignItems: "center", minWidth: 50 }}>
+                      <Text style={{ fontSize: 10, color: c.subtexto, marginBottom: 2 }}>{label}</Text>
+                      <Text style={{ fontSize: 18, fontWeight: "800", color: c.texto }}>{value ?? 0}</Text>
+                    </View>
+                  ))}
+                </View>
               </View>
             ))}
-            <TouchableOpacity
-              style={[s.btnPrimary, { backgroundColor: c.boton, opacity: saving ? 0.6 : 1 }]}
-              onPress={handleSaveBulkStats}
-              disabled={saving}
-            >
-              <Text style={[s.btnPrimaryText, { color: c.botonTexto }]}>
-                {saving ? "Guardando..." : "💾 Guardar estadísticas"}
-              </Text>
-            </TouchableOpacity>
-          </>
-        ) : (
-          <Text style={[s.hintText, { color: c.subtexto }]}>Selecciona un partido en el calendario superior.</Text>
-        )}
-      </View>
-    );
-  };
+        </>
+      ) : (
+        <Text style={[s.hintText, { color: c.subtexto }]}>Selecciona un partido en el calendario superior.</Text>
+      )}
+    </View>
+  );
 
   const renderFines = () => (
     <View style={s.tabContent}>
@@ -645,25 +590,30 @@ export default function GestionCoach() {
         <ScrollView horizontal style={s.eventPicker} showsHorizontalScrollIndicator={false}>
           {loadingEvents ? (
             <ActivityIndicator color={c.boton} style={{ margin: 12 }} />
-          ) : events.length === 0 ? (
+          ) : selectorEvents.length === 0 ? (
             <Text style={[s.hintText, { color: c.subtexto, margin: 12 }]}>Sin eventos próximos.</Text>
-          ) : events.map(e => {
+          ) : selectorEvents.map(e => {
             const active = selectedEvent?.id === e.id;
+            const accentColor = e.type === "MATCH" ? "#f97316" : "#3b82f6";
             return (
               <TouchableOpacity
                 key={`${e.type}-${e.id}`}
                 style={[
                   s.eventChip,
                   {
-                    backgroundColor: active ? `${c.boton}20` : c.input,
-                    borderWidth: active ? 2 : 0,
-                    borderColor: active ? c.boton : "transparent",
+                    backgroundColor: active ? `${accentColor}18` : c.input,
+                    borderWidth: 1,
+                    borderColor: active ? accentColor : c.bordeInput,
+                    borderLeftWidth: 3,
+                    borderLeftColor: accentColor,
                   },
                 ]}
                 onPress={() => setSelectedEvent(e)}
               >
                 <Text>{e.type === "MATCH" ? "⚽" : "🏃"}</Text>
-                <Text style={[s.eventChipText, { color: c.texto }]}>{e.title}</Text>
+                <Text style={[s.eventChipText, { color: active ? accentColor : c.texto }]} numberOfLines={3}>
+                  {formatEventLabel(e)}
+                </Text>
               </TouchableOpacity>
             );
           })}
@@ -675,7 +625,7 @@ export default function GestionCoach() {
             <TouchableOpacity
               key={tab}
               style={[s.tabItem, activeTab === tab && { borderBottomWidth: 2, borderBottomColor: c.boton }]}
-              onPress={() => setActiveTab(tab)}
+              onPress={() => handleTabChange(tab)}
             >
               <Text style={[s.tabText, { color: activeTab === tab ? c.boton : c.subtexto }]}>
                 {tab}
@@ -805,8 +755,8 @@ const s = StyleSheet.create({
   teamChipText:        { fontSize: 13, fontWeight: "600" },
 
   eventPicker:    { paddingHorizontal: 20, paddingVertical: 12 },
-  eventChip:      { alignItems: "center", marginRight: 10, padding: 10, borderRadius: 12 },
-  eventChipText:  { fontSize: 10, textAlign: "center", marginTop: 2 },
+  eventChip:      { alignItems: "center", marginRight: 10, padding: 10, borderRadius: 12, minWidth: 110, maxWidth: 155 },
+  eventChipText:  { fontSize: 11, textAlign: "center", marginTop: 4, lineHeight: 15 },
 
   tabBar:         { flexDirection: "row", paddingHorizontal: 20, borderBottomWidth: 1 },
   tabItem:        { flex: 1, paddingVertical: 12, alignItems: "center", borderBottomWidth: 2, borderBottomColor: "transparent" },

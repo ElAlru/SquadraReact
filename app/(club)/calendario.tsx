@@ -1,9 +1,9 @@
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert, FlatList, Modal,
+  Alert, Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -75,6 +75,7 @@ export default function Calendario() {
     activeTeamId: myTeamId,
   } = useAuthStore();
 
+  const router = useRouter();
   const isPresident = role === "PRESIDENT";
   const isCoach = role === "COACH";
   const isRelative = role === "RELATIVE";
@@ -96,6 +97,7 @@ export default function Calendario() {
   const [loading, setLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
 
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedDayEvents, setSelectedDayEvents] = useState<CalendarEvent[]>([]);
@@ -209,6 +211,9 @@ export default function Calendario() {
     try {
       const fieldIdValue = form.fieldId ? Number(form.fieldId) : null;
       const locationValue = form.fieldId ? null : form.location || null;
+      if (editingEvent) {
+        await apiFetch(`/api/calendar/${editingEvent.id}?clubId=${clubId}&type=${editingEvent.type}`, { method: "DELETE" });
+      }
       if (createType === "TRAINING" && form.recurring) {
         await apiFetch(`/api/calendar/training/recurring?clubId=${clubId}`, {
           method: "POST",
@@ -233,11 +238,12 @@ export default function Calendario() {
         await apiFetch(`${endpoint}?clubId=${clubId}`, { method: "POST", body: JSON.stringify(body) });
       }
       setCreateModal(false);
+      setEditingEvent(null);
       setForm({ isHome: "true", matchType: "LEAGUE", location: "", fieldId: null, endTime: "", recurring: false, recurringDays: [], recurringEndDate: "", date: "", time: "" });
       fetchEvents();
-      Alert.alert("Éxito", "Evento programado correctamente.");
+      Alert.alert("Éxito", editingEvent ? "Evento actualizado correctamente." : "Evento programado correctamente.");
     } catch {
-      Alert.alert("Error", "No se pudo crear el evento.");
+      Alert.alert("Error", editingEvent ? "No se pudo actualizar el evento." : "No se pudo crear el evento.");
     } finally {
       setIsSubmitting(false);
     }
@@ -254,6 +260,7 @@ export default function Calendario() {
           setDeletingId(eventKey);
           try {
             await apiFetch(`/api/calendar/${eventId}?clubId=${clubId}&type=${eventType}`, { method: "DELETE" });
+            setDayModal(false);
             fetchEvents();
             Alert.alert("Éxito", "Evento eliminado.");
           } catch {
@@ -264,6 +271,29 @@ export default function Calendario() {
         },
       },
     ]);
+  };
+
+  // ─── EDITAR ───────────────────────────────────────────────────────────────
+  const handleEditEvent = (event: CalendarEvent) => {
+    const date = new Date(event.startTime);
+    setCreateType(event.type);
+    setForm({
+      isHome: "true",
+      matchType: "LEAGUE",
+      location: event.location || "",
+      fieldId: null,
+      endTime: event.endTime ? toTimeString(new Date(event.endTime)) : "",
+      recurring: false,
+      recurringDays: [],
+      recurringEndDate: "",
+      date: toDateString(date),
+      time: toTimeString(date),
+      teamId: String(event.teamId),
+      opponentName: event.type === "MATCH" ? event.title.replace(/^vs\s*/i, "") : "",
+    });
+    setEditingEvent(event);
+    setDayModal(false);
+    setCreateModal(true);
   };
 
   // ─── EXPORTAR CSV ─────────────────────────────────────────────────────────
@@ -356,12 +386,9 @@ export default function Calendario() {
               activeOpacity={0.7}
             >
               <Text style={[styles.dayText, { color: isSelected ? c.boton : c.texto, fontWeight: isSelected ? "700" : "600" }]}>{currentDate}</Text>
-              <View style={styles.dotsContainer}>
-                {hasMatch && <View style={[styles.dot, { backgroundColor: c.boton }]} />}
-                {hasTraining && <View style={[styles.dot, { backgroundColor: '#3b82f6' }]} />}
-                {dayEvents.length > 2 && (
-                  <Text style={{ fontSize: 8, color: c.subtexto, fontWeight: '700' }}>+{dayEvents.length - 2}</Text>
-                )}
+              <View style={styles.barsContainer}>
+                {hasTraining && <View style={[styles.eventBar, { backgroundColor: '#3b82f6' }]} />}
+                {hasMatch && <View style={[styles.eventBar, { backgroundColor: '#f97316' }]} />}
               </View>
             </TouchableOpacity>,
           );
@@ -465,13 +492,13 @@ export default function Calendario() {
             }
           </View>
           <View style={styles.legendRow}>
-            <View style={styles.legendItem}><View style={[styles.dot, { backgroundColor: c.boton }]} /><Text style={[styles.legendText, { color: c.subtexto }]}>Partido</Text></View>
+            <View style={styles.legendItem}><View style={[styles.dot, { backgroundColor: "#f97316" }]} /><Text style={[styles.legendText, { color: c.subtexto }]}>Partido</Text></View>
             <View style={styles.legendItem}><View style={[styles.dot, { backgroundColor: "#3b82f6" }]} /><Text style={[styles.legendText, { color: c.subtexto }]}>Entreno</Text></View>
           </View>
         </View>
 
-        {/* LISTA DE EVENTOS */}
-        <FlatList
+        {/* Lista de eventos eliminada — los eventos se ven en el modal del día */}
+        {false && <FlatList
           data={events}
           keyExtractor={(item) => `${item.type}-${item.id}`}
           contentContainerStyle={styles.container}
@@ -526,7 +553,7 @@ export default function Calendario() {
               </View>
             );
           }}
-        />
+        />}
 
         {/* FAB */}
         {canCreate && (
@@ -617,6 +644,37 @@ export default function Calendario() {
                         {item.teamName && (
                           <Text style={[styles.metaText, { color: c.subtexto, marginTop: 3 }]}>👥 {item.teamName}</Text>
                         )}
+                        {item.type === "MATCH" && canDeleteEvent(item) && (() => {
+                          const isToday = new Date(item.startTime).toDateString() === new Date().toDateString();
+                          return isToday ? (
+                            <TouchableOpacity
+                              style={[styles.liveBtn, { marginTop: 10 }]}
+                              onPress={() => { setDayModal(false); router.push(`/(club)/live-match/${item.id}`); }}
+                            >
+                              <Text style={styles.liveBtnText}>⚡ Iniciar Partido en Vivo</Text>
+                            </TouchableOpacity>
+                          ) : null;
+                        })()}
+                        {canDeleteEvent(item) && (
+                          <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+                            <TouchableOpacity
+                              style={[styles.modalActionBtn, { backgroundColor: `${accentColor}15`, borderColor: accentColor }]}
+                              onPress={() => handleEditEvent(item)}
+                            >
+                              <Text style={{ color: accentColor, fontWeight: "700", fontSize: 13 }}>✏️ Editar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.modalActionBtn, { backgroundColor: "#ef444415", borderColor: "#ef4444" }]}
+                              onPress={() => handleDeleteEvent(item.id, item.type)}
+                              disabled={deletingId === `${item.type}-${item.id}`}
+                            >
+                              {deletingId === `${item.type}-${item.id}`
+                                ? <ActivityIndicator size="small" color="#ef4444" />
+                                : <Text style={{ color: "#ef4444", fontWeight: "700", fontSize: 13 }}>🗑 Borrar</Text>
+                              }
+                            </TouchableOpacity>
+                          </View>
+                        )}
                       </View>
                     );
                   })}
@@ -633,11 +691,11 @@ export default function Calendario() {
         </Modal>
 
         {/* ─── MODAL CREAR ─────────────────────────────────────────────────── */}
-        <Modal visible={createModal} transparent animationType="slide">
+        <Modal visible={createModal} transparent animationType="slide" onRequestClose={() => { setCreateModal(false); setEditingEvent(null); }}>
           <View style={styles.modalOverlay}>
             <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: "flex-end" }} keyboardShouldPersistTaps="handled">
               <View style={[styles.modalBox, { backgroundColor: c.fondo }]}>
-                <Text style={[styles.modalTitle, { color: c.texto }]}>Nuevo Evento</Text>
+                <Text style={[styles.modalTitle, { color: c.texto }]}>{editingEvent ? "Editar Evento" : "Nuevo Evento"}</Text>
 
                 <View style={styles.chipsRowModal}>
                   {(["TRAINING", "MATCH"] as const).map((type) => (
@@ -755,11 +813,11 @@ export default function Calendario() {
                 )}
 
                 <View style={{ flexDirection: "row", gap: 10, marginTop: 15 }}>
-                  <TouchableOpacity style={[styles.btnCrear, { backgroundColor: c.input, flex: 1, borderWidth: 1, borderColor: c.bordeInput }]} onPress={() => setCreateModal(false)}>
+                  <TouchableOpacity style={[styles.btnCrear, { backgroundColor: c.input, flex: 1, borderWidth: 1, borderColor: c.bordeInput }]} onPress={() => { setCreateModal(false); setEditingEvent(null); }}>
                     <Text style={[styles.btnCrearText, { color: c.texto }]}>Cancelar</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={[styles.btnCrear, { backgroundColor: isSubmitting ? c.bordeInput : c.boton, flex: 1 }]} onPress={handleCreateEvent} disabled={isSubmitting}>
-                    {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnCrearText}>Confirmar</Text>}
+                    {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnCrearText}>{editingEvent ? "Actualizar" : "Confirmar"}</Text>}
                   </TouchableOpacity>
                 </View>
               </View>
@@ -822,11 +880,15 @@ const styles = StyleSheet.create({
   calendarWrapper: { borderRadius: 10, borderWidth: 1, padding: 5, paddingBottom: 8 },
   weekRow: { flexDirection: "row", justifyContent: "space-around", marginBottom: 3 },
   weekDayText: { flex: 1, textAlign: "center", fontSize: 12, fontWeight: "600" },
-  dayCell: { flex: 1, height: 52, alignItems: "center", justifyContent: "center", margin: 1, borderRadius: 7 },
-  dayCellEmpty: { flex: 1, height: 52, margin: 1 },
+  dayCell: { flex: 1, height: 62, alignItems: "center", justifyContent: "flex-start", paddingTop: 8, margin: 1, borderRadius: 7 },
+  dayCellEmpty: { flex: 1, height: 62, margin: 1 },
   dayText: { fontSize: 14, fontWeight: "600" },
-  dotsContainer: { flexDirection: "row", gap: 3, marginTop: 3 },
+  barsContainer: { width: "88%", gap: 2, marginTop: 3 },
+  eventBar: { height: 3, borderRadius: 1.5 },
   dot: { width: 5, height: 5, borderRadius: 2.5 },
+  modalActionBtn: { flex: 1, paddingVertical: 8, borderRadius: 8, borderWidth: 1, alignItems: "center" },
+  liveBtn: { backgroundColor: "#16a34a", paddingVertical: 10, borderRadius: 10, alignItems: "center" },
+  liveBtnText: { color: "#fff", fontWeight: "800", fontSize: 14 },
   dayModalHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: "#ccc", alignSelf: "center", marginBottom: 16 },
   dayEventCard: { borderRadius: 12, borderWidth: 1, borderLeftWidth: 4, padding: 12, marginBottom: 10 },
   dayEventBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
